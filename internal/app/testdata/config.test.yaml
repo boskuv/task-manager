@@ -1,0 +1,24 @@
+server:
+  host: 127.0.0.1
+  port: 9090
+  read_timeout: 5s
+  write_timeout: 5s
+  shutdown_timeout: 10s
+
+database:
+  dsn: "user:pass@tcp(localhost:3306)/testdb?parseTime=true"
+  max_open_conns: 10
+  max_idle_conns: 2
+  conn_max_lifetime: 1m
+
+redis:
+  addr: redis:6379
+  password: secret
+  db: 1
+
+jwt:
+  secret: test-secret
+  access_ttl: 1h
+
+rate_limit:
+  requests_per_minute: 50
