@@ -5,7 +5,7 @@ BINARY      := bin/$(APP_NAME)
 MAIN        := ./cmd/api
 MIGRATIONS  := migrations
 GOOSE       ?= goose
-DATABASE_DSN ?= $(shell grep -E '^dsn:' configs/config.yaml 2>/dev/null | awk '{print $$2}' | tr -d '"')
+DATABASE_DSN ?= $(shell grep -E '^\s+dsn:' configs/config.yaml 2>/dev/null | head -1 | awk '{print $$2}' | tr -d '"')
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
