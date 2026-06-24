@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -28,21 +29,28 @@ func TestHealthHandler(t *testing.T) {
 	}
 }
 
-func TestNewRegistersHealthRoute(t *testing.T) {
+func TestNewRouterRegistersHealthRoute(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := loadFrom("testdata/config.test.yaml")
-	if err != nil {
-		t.Fatalf("loadFrom: %v", err)
-	}
-
-	a := New(cfg)
+	mux := newRouter()
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
 
-	a.server.Handler.ServeHTTP(rec, req)
+	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+func TestOpenMySQLEmptyDSN(t *testing.T) {
+	t.Parallel()
+
+	_, err := openMySQL(DatabaseConfig{})
+	if err == nil {
+		t.Fatal("expected error for empty dsn")
+	}
+	if !strings.Contains(err.Error(), "dsn is required") {
+		t.Errorf("error = %q, want dsn required message", err.Error())
 	}
 }

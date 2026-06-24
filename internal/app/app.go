@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -14,23 +15,27 @@ import (
 // App wires dependencies and runs the HTTP server.
 type App struct {
 	cfg    *Config
+	db     *sql.DB
 	server *http.Server
 }
 
-// New builds the application with an HTTP server skeleton.
-func New(cfg *Config) *App {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", healthHandler)
+// New builds the application with an HTTP server and MySQL connection pool.
+func New(cfg *Config) (*App, error) {
+	db, err := openMySQL(cfg.Database)
+	if err != nil {
+		return nil, err
+	}
 
 	return &App{
 		cfg: cfg,
+		db:  db,
 		server: &http.Server{
 			Addr:         cfg.Addr(),
-			Handler:      mux,
+			Handler:      newRouter(),
 			ReadTimeout:  cfg.Server.ReadTimeout,
 			WriteTimeout: cfg.Server.WriteTimeout,
 		},
-	}
+	}, nil
 }
 
 // Run starts the HTTP server and shuts it down gracefully on SIGINT or SIGTERM.
@@ -49,6 +54,7 @@ func (a *App) Run() error {
 
 	select {
 	case err := <-errCh:
+		closeMySQL(a.db)
 		return err
 	case sig := <-quit:
 		slog.Info("shutdown signal received", "signal", sig.String())
@@ -58,11 +64,19 @@ func (a *App) Run() error {
 	defer cancel()
 
 	if err := a.server.Shutdown(ctx); err != nil {
+		closeMySQL(a.db)
 		return fmt.Errorf("server shutdown: %w", err)
 	}
 
+	closeMySQL(a.db)
 	slog.Info("server stopped")
 	return nil
+}
+
+func newRouter() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", healthHandler)
+	return mux
 }
 
 func healthHandler(w http.ResponseWriter, _ *http.Request) {
