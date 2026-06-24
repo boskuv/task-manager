@@ -4,7 +4,7 @@ APP_NAME    := task-manager
 BINARY      := bin/$(APP_NAME)
 MAIN        := ./cmd/api
 MIGRATIONS  := migrations
-GOOSE       ?= goose
+GOOSE       ?= go tool goose
 DATABASE_DSN ?= $(shell grep -E '^\s+dsn:' configs/config.yaml 2>/dev/null | head -1 | awk '{print $$2}' | tr -d '"')
 
 help: ## Show available targets
