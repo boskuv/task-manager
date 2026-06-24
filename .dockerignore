@@ -1,0 +1,32 @@
+# Git
+.git
+.gitignore
+
+# Build artifacts
+bin/
+*.exe
+*.test
+*.out
+coverage.out
+coverage.html
+
+# Local config and secrets
+.env
+.env.*
+configs/config.yaml
+
+# IDE and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Project docs (not needed in image)
+TODO
+
+# Docker local data
+docker/data/
+
+# Logs and temp
+*.log
+tmp/

@@ -16,7 +16,10 @@ func main() {
 		log.Fatalf("load config: %v", err)
 	}
 
-	application := app.New(cfg)
+	application, err := app.New(cfg)
+	if err != nil {
+		log.Fatalf("init app: %v", err)
+	}
 	if err := application.Run(); err != nil {
 		log.Fatalf("run app: %v", err)
 	}
