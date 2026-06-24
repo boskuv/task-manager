@@ -10,25 +10,35 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/redis/go-redis/v9"
 )
 
 // App wires dependencies and runs the HTTP server.
 type App struct {
 	cfg    *Config
 	db     *sql.DB
+	redis  *redis.Client
 	server *http.Server
 }
 
-// New builds the application with an HTTP server and MySQL connection pool.
+// New builds the application with an HTTP server, MySQL pool, and Redis client.
 func New(cfg *Config) (*App, error) {
 	db, err := openMySQL(cfg.Database)
 	if err != nil {
 		return nil, err
 	}
 
+	rdb, err := openRedis(cfg.Redis)
+	if err != nil {
+		closeMySQL(db)
+		return nil, err
+	}
+
 	return &App{
-		cfg: cfg,
-		db:  db,
+		cfg:   cfg,
+		db:    db,
+		redis: rdb,
 		server: &http.Server{
 			Addr:         cfg.Addr(),
 			Handler:      newRouter(),
@@ -54,7 +64,7 @@ func (a *App) Run() error {
 
 	select {
 	case err := <-errCh:
-		closeMySQL(a.db)
+		a.close()
 		return err
 	case sig := <-quit:
 		slog.Info("shutdown signal received", "signal", sig.String())
@@ -64,13 +74,18 @@ func (a *App) Run() error {
 	defer cancel()
 
 	if err := a.server.Shutdown(ctx); err != nil {
-		closeMySQL(a.db)
+		a.close()
 		return fmt.Errorf("server shutdown: %w", err)
 	}
 
-	closeMySQL(a.db)
+	a.close()
 	slog.Info("server stopped")
 	return nil
+}
+
+func (a *App) close() {
+	closeRedis(a.redis)
+	closeMySQL(a.db)
 }
 
 func newRouter() *http.ServeMux {
