@@ -3,6 +3,7 @@
 APP_NAME    := task-manager
 BINARY      := bin/$(APP_NAME)
 MAIN        := ./cmd/api
+PACKAGES    := ./cmd/... ./internal/...
 MIGRATIONS  := migrations
 GOOSE       ?= go tool goose
 DATABASE_DSN ?= $(shell grep -E '^\s+dsn:' configs/config.yaml 2>/dev/null | head -1 | awk '{print $$2}' | tr -d '"')
@@ -18,10 +19,10 @@ run: ## Run API locally
 	go run $(MAIN)
 
 test: ## Run all tests
-	go test ./... -v -race -count=1
+	go test $(PACKAGES) -v -race -count=1
 
 test-cover: ## Run tests with coverage report
-	go test ./... -race -coverprofile=coverage.out -covermode=atomic
+	go test $(PACKAGES) -race -coverprofile=coverage.out -covermode=atomic
 	go tool cover -func=coverage.out
 
 migrate: ## Apply database migrations
@@ -34,7 +35,7 @@ migrate-create: ## Create new migration (usage: make migrate-create NAME=create_
 	$(GOOSE) -dir $(MIGRATIONS) create $(NAME) sql
 
 lint: ## Run golangci-lint
-	golangci-lint run ./...
+	golangci-lint run $(PACKAGES)
 
 fmt: ## Format Go code
 	go fmt ./...
