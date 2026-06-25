@@ -32,7 +32,7 @@ func TestHealthHandler(t *testing.T) {
 func TestNewRouterRegistersHealthRoute(t *testing.T) {
 	t.Parallel()
 
-	mux := newRouter()
+	mux := newRouter(nil)
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
 

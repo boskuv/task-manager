@@ -12,6 +12,11 @@ import (
 	"syscall"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/boskuv/task-manager/internal/handler"
+	jwtmanager "github.com/boskuv/task-manager/internal/pkg/jwt"
+	mysqlrepo "github.com/boskuv/task-manager/internal/repository/mysql"
+	authuc "github.com/boskuv/task-manager/internal/usecase/auth"
 )
 
 // App wires dependencies and runs the HTTP server.
@@ -35,13 +40,18 @@ func New(cfg *Config) (*App, error) {
 		return nil, err
 	}
 
+	userRepo := mysqlrepo.NewUserRepo(db)
+	jwtManager := jwtmanager.NewManager(cfg.JWT.Secret, cfg.JWT.AccessTTL)
+	authService := authuc.NewService(userRepo, jwtManager)
+	authHandler := handler.NewAuthHandler(authService)
+
 	return &App{
 		cfg:   cfg,
 		db:    db,
 		redis: rdb,
 		server: &http.Server{
 			Addr:         cfg.Addr(),
-			Handler:      newRouter(),
+			Handler:      newRouter(authHandler),
 			ReadTimeout:  cfg.Server.ReadTimeout,
 			WriteTimeout: cfg.Server.WriteTimeout,
 		},
@@ -86,12 +96,6 @@ func (a *App) Run() error {
 func (a *App) close() {
 	closeRedis(a.redis)
 	closeMySQL(a.db)
-}
-
-func newRouter() *http.ServeMux {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", healthHandler)
-	return mux
 }
 
 func healthHandler(w http.ResponseWriter, _ *http.Request) {
