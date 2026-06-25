@@ -14,7 +14,7 @@ func TestCreateSuccess(t *testing.T) {
 	t.Parallel()
 
 	repo := newMockTeamRepo()
-	svc := NewService(repo, newMockUserRepo())
+	svc := NewService(repo, newMockUserRepo(), nil)
 
 	team, err := svc.Create(context.Background(), 1, "  Backend  ")
 	if err != nil {
@@ -42,7 +42,7 @@ func TestCreateSuccess(t *testing.T) {
 func TestCreateInvalidInput(t *testing.T) {
 	t.Parallel()
 
-	svc := NewService(newMockTeamRepo(), newMockUserRepo())
+	svc := NewService(newMockTeamRepo(), newMockUserRepo(), nil)
 
 	tests := []struct {
 		name   string
@@ -70,7 +70,7 @@ func TestListSuccess(t *testing.T) {
 	t.Parallel()
 
 	repo := newMockTeamRepo()
-	svc := NewService(repo, newMockUserRepo())
+	svc := NewService(repo, newMockUserRepo(), nil)
 
 	first, err := svc.Create(context.Background(), 1, "Team A")
 	if err != nil {
@@ -100,7 +100,7 @@ func TestListSuccess(t *testing.T) {
 func TestListInvalidUserID(t *testing.T) {
 	t.Parallel()
 
-	svc := NewService(newMockTeamRepo(), newMockUserRepo())
+	svc := NewService(newMockTeamRepo(), newMockUserRepo(), nil)
 
 	_, err := svc.List(context.Background(), 0)
 	if !errors.Is(err, domain.ErrInvalidInput) {
@@ -111,7 +111,7 @@ func TestListInvalidUserID(t *testing.T) {
 func TestListEmpty(t *testing.T) {
 	t.Parallel()
 
-	teams, err := NewService(newMockTeamRepo(), newMockUserRepo()).List(context.Background(), 42)
+	teams, err := NewService(newMockTeamRepo(), newMockUserRepo(), nil).List(context.Background(), 42)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -195,13 +195,82 @@ func (m *mockTeamRepo) GetMemberRole(_ context.Context, teamID, userID int64) (d
 	return member.Role, nil
 }
 
+func TestInviteSendsEmail(t *testing.T) {
+	t.Parallel()
+
+	teams := newMockTeamRepo()
+	users := newMockUserRepo()
+	users.users["invitee@example.com"] = domain.User{ID: 2, Email: "invitee@example.com"}
+	mailer := &stubInviteMailer{}
+	svc := NewService(teams, users, mailer)
+
+	team, err := svc.Create(context.Background(), 1, "Backend")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	if _, err := svc.Invite(context.Background(), 1, team.ID, "invitee@example.com", "member"); err != nil {
+		t.Fatalf("Invite: %v", err)
+	}
+	if mailer.calls != 1 {
+		t.Fatalf("mailer calls = %d, want 1", mailer.calls)
+	}
+	if mailer.lastEmail != "invitee@example.com" || mailer.lastTeam != "Backend" {
+		t.Fatalf("mailer payload = (%q, %q), want (invitee@example.com, Backend)", mailer.lastEmail, mailer.lastTeam)
+	}
+	if mailer.lastRole != domain.TeamRoleMember {
+		t.Fatalf("mailer role = %q, want member", mailer.lastRole)
+	}
+}
+
+func TestInviteSucceedsWhenEmailFails(t *testing.T) {
+	t.Parallel()
+
+	teams := newMockTeamRepo()
+	users := newMockUserRepo()
+	users.users["invitee@example.com"] = domain.User{ID: 2, Email: "invitee@example.com"}
+	svc := NewService(teams, users, &stubInviteMailer{err: errors.New("smtp down")})
+
+	team, err := svc.Create(context.Background(), 1, "Backend")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	member, err := svc.Invite(context.Background(), 1, team.ID, "invitee@example.com", "member")
+	if err != nil {
+		t.Fatalf("Invite: %v", err)
+	}
+	if member.UserID != 2 {
+		t.Fatalf("member.UserID = %d, want 2", member.UserID)
+	}
+}
+
+type stubInviteMailer struct {
+	calls     int
+	lastEmail string
+	lastTeam  string
+	lastRole  domain.TeamRole
+	err       error
+}
+
+func (s *stubInviteMailer) SendTeamInvite(_ context.Context, toEmail, teamName string, role domain.TeamRole) error {
+	if s.err != nil {
+		return s.err
+	}
+	s.calls++
+	s.lastEmail = toEmail
+	s.lastTeam = teamName
+	s.lastRole = role
+	return nil
+}
+
 func TestInviteSuccessAsOwner(t *testing.T) {
 	t.Parallel()
 
 	teams := newMockTeamRepo()
 	users := newMockUserRepo()
 	users.users["invitee@example.com"] = domain.User{ID: 2, Email: "invitee@example.com"}
-	svc := NewService(teams, users)
+	svc := NewService(teams, users, nil)
 
 	team, err := svc.Create(context.Background(), 1, "Backend")
 	if err != nil {
@@ -223,7 +292,7 @@ func TestInviteSuccessAsAdmin(t *testing.T) {
 	teams := newMockTeamRepo()
 	users := newMockUserRepo()
 	users.users["invitee@example.com"] = domain.User{ID: 2, Email: "invitee@example.com"}
-	svc := NewService(teams, users)
+	svc := NewService(teams, users, nil)
 
 	team, err := svc.Create(context.Background(), 1, "Backend")
 	if err != nil {
@@ -250,7 +319,7 @@ func TestInviteForbiddenForMember(t *testing.T) {
 	teams := newMockTeamRepo()
 	users := newMockUserRepo()
 	users.users["invitee@example.com"] = domain.User{ID: 2, Email: "invitee@example.com"}
-	svc := NewService(teams, users)
+	svc := NewService(teams, users, nil)
 
 	team, err := svc.Create(context.Background(), 1, "Backend")
 	if err != nil {
@@ -274,7 +343,7 @@ func TestInviteForbiddenForNonMember(t *testing.T) {
 	teams := newMockTeamRepo()
 	users := newMockUserRepo()
 	users.users["invitee@example.com"] = domain.User{ID: 2, Email: "invitee@example.com"}
-	svc := NewService(teams, users)
+	svc := NewService(teams, users, nil)
 
 	team, err := svc.Create(context.Background(), 1, "Backend")
 	if err != nil {
@@ -291,7 +360,7 @@ func TestInviteUserNotFound(t *testing.T) {
 	t.Parallel()
 
 	teams := newMockTeamRepo()
-	svc := NewService(teams, newMockUserRepo())
+	svc := NewService(teams, newMockUserRepo(), nil)
 
 	team, err := svc.Create(context.Background(), 1, "Backend")
 	if err != nil {
@@ -307,7 +376,7 @@ func TestInviteUserNotFound(t *testing.T) {
 func TestInviteTeamNotFound(t *testing.T) {
 	t.Parallel()
 
-	svc := NewService(newMockTeamRepo(), newMockUserRepo())
+	svc := NewService(newMockTeamRepo(), newMockUserRepo(), nil)
 
 	_, err := svc.Invite(context.Background(), 1, 999, "user@example.com", "member")
 	if !errors.Is(err, domain.ErrNotFound) {
@@ -321,7 +390,7 @@ func TestInviteAlreadyMember(t *testing.T) {
 	teams := newMockTeamRepo()
 	users := newMockUserRepo()
 	users.users["invitee@example.com"] = domain.User{ID: 2, Email: "invitee@example.com"}
-	svc := NewService(teams, users)
+	svc := NewService(teams, users, nil)
 
 	team, err := svc.Create(context.Background(), 1, "Backend")
 	if err != nil {
@@ -344,7 +413,7 @@ func TestInviteInvalidInput(t *testing.T) {
 	teams := newMockTeamRepo()
 	users := newMockUserRepo()
 	users.users["invitee@example.com"] = domain.User{ID: 2, Email: "invitee@example.com"}
-	svc := NewService(teams, users)
+	svc := NewService(teams, users, nil)
 
 	team, err := svc.Create(context.Background(), 1, "Backend")
 	if err != nil {

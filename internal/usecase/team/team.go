@@ -2,6 +2,7 @@ package team
 
 import (
 	"context"
+	"log/slog"
 	"net/mail"
 	"strings"
 
@@ -11,17 +12,24 @@ import (
 
 const maxTeamNameLength = 255
 
+// InviteMailer sends team invite notifications.
+type InviteMailer interface {
+	SendTeamInvite(ctx context.Context, toEmail, teamName string, role domain.TeamRole) error
+}
+
 // Service handles team creation, listing, and invites.
 type Service struct {
-	teams repository.TeamRepository
-	users repository.UserRepository
+	teams  repository.TeamRepository
+	users  repository.UserRepository
+	mailer InviteMailer
 }
 
 // NewService creates a team use case service.
-func NewService(teams repository.TeamRepository, users repository.UserRepository) *Service {
+func NewService(teams repository.TeamRepository, users repository.UserRepository, mailer InviteMailer) *Service {
 	return &Service{
-		teams: teams,
-		users: users,
+		teams:  teams,
+		users:  users,
+		mailer: mailer,
 	}
 }
 
@@ -73,7 +81,8 @@ func (s *Service) Invite(ctx context.Context, actorUserID, teamID int64, email, 
 		return domain.TeamMember{}, err
 	}
 
-	if _, err := s.teams.GetByID(ctx, teamID); err != nil {
+	team, err := s.teams.GetByID(ctx, teamID)
+	if err != nil {
 		return domain.TeamMember{}, err
 	}
 
@@ -100,6 +109,16 @@ func (s *Service) Invite(ctx context.Context, actorUserID, teamID int64, email, 
 	}
 	if err := s.teams.AddMember(ctx, member); err != nil {
 		return domain.TeamMember{}, err
+	}
+
+	if s.mailer != nil {
+		if err := s.mailer.SendTeamInvite(ctx, email, team.Name, inviteRole); err != nil {
+			slog.Default().WarnContext(ctx, "failed to send invite email",
+				"error", err,
+				"email", email,
+				"team_id", teamID,
+			)
+		}
 	}
 
 	return member, nil
