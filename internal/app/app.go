@@ -51,7 +51,10 @@ func New(cfg *Config) (*App, error) {
 		redis: rdb,
 		server: &http.Server{
 			Addr:         cfg.Addr(),
-			Handler:      newRouter(authHandler),
+			Handler: newRouter(routerDeps{
+				auth:       authHandler,
+				jwtManager: jwtManager,
+			}),
 			ReadTimeout:  cfg.Server.ReadTimeout,
 			WriteTimeout: cfg.Server.WriteTimeout,
 		},

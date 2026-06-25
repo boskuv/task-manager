@@ -9,14 +9,22 @@ import (
 	"github.com/boskuv/task-manager/internal/dto"
 )
 
+func WriteJSON(w http.ResponseWriter, status int, payload any) {
+	writeJSON(w, status, payload)
+}
+
 func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
 }
 
-func writeError(w http.ResponseWriter, status int, message string) {
+func WriteError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, dto.ErrorResponse{Error: message})
+}
+
+func writeError(w http.ResponseWriter, status int, message string) {
+	WriteError(w, status, message)
 }
 
 func mapDomainError(err error) (int, string) {
