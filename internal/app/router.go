@@ -30,6 +30,7 @@ func newRouter(deps routerDeps) http.Handler {
 		if deps.teams != nil {
 			mux.Handle("POST /api/v1/teams", protected(http.HandlerFunc(deps.teams.Create)))
 			mux.Handle("GET /api/v1/teams", protected(http.HandlerFunc(deps.teams.List)))
+			mux.Handle("POST /api/v1/teams/{id}/invite", protected(http.HandlerFunc(deps.teams.Invite)))
 		}
 	}
 

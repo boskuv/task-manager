@@ -94,6 +94,81 @@ func TestTeamHandlerList(t *testing.T) {
 	}
 }
 
+func TestTeamHandlerInvite(t *testing.T) {
+	t.Parallel()
+
+	joinedAt := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
+	handler := NewTeamHandler(&stubTeamService{
+		inviteMember: domain.TeamMember{
+			TeamID:   3,
+			UserID:   7,
+			Role:     domain.TeamRoleMember,
+			JoinedAt: joinedAt,
+		},
+	})
+
+	body := bytes.NewBufferString(`{"email":"user@example.com","role":"member"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/teams/3/invite", body)
+	req.SetPathValue("id", "3")
+	req = req.WithContext(ContextWithUserID(req.Context(), 42))
+	rec := httptest.NewRecorder()
+
+	handler.Invite(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusCreated)
+	}
+
+	var resp dto.TeamMemberResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.TeamID != 3 || resp.UserID != 7 || resp.Role != "member" {
+		t.Fatalf("response = %+v, want team_id=3 user_id=7 role=member", resp)
+	}
+	if resp.JoinedAt != "2026-06-25T12:00:00Z" {
+		t.Errorf("joined_at = %q, want RFC3339 timestamp", resp.JoinedAt)
+	}
+}
+
+func TestTeamHandlerInviteForbidden(t *testing.T) {
+	t.Parallel()
+
+	handler := NewTeamHandler(&stubTeamService{
+		inviteErr: domain.ErrForbidden,
+	})
+
+	body := bytes.NewBufferString(`{"email":"user@example.com","role":"member"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/teams/3/invite", body)
+	req.SetPathValue("id", "3")
+	req = req.WithContext(ContextWithUserID(req.Context(), 42))
+	rec := httptest.NewRecorder()
+
+	handler.Invite(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+}
+
+func TestTeamHandlerInviteInvalidTeamID(t *testing.T) {
+	t.Parallel()
+
+	handler := NewTeamHandler(&stubTeamService{})
+
+	body := bytes.NewBufferString(`{"email":"user@example.com","role":"member"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/teams/bad/invite", body)
+	req.SetPathValue("id", "bad")
+	req = req.WithContext(ContextWithUserID(req.Context(), 42))
+	rec := httptest.NewRecorder()
+
+	handler.Invite(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
 func TestTeamHandlerInvalidJSON(t *testing.T) {
 	t.Parallel()
 
@@ -111,10 +186,12 @@ func TestTeamHandlerInvalidJSON(t *testing.T) {
 }
 
 type stubTeamService struct {
-	createTeam domain.Team
-	createErr  error
-	listTeams  []domain.Team
-	listErr    error
+	createTeam   domain.Team
+	createErr    error
+	listTeams    []domain.Team
+	listErr      error
+	inviteMember domain.TeamMember
+	inviteErr    error
 }
 
 func (s *stubTeamService) Create(_ context.Context, userID int64, name string) (domain.Team, error) {
@@ -136,4 +213,18 @@ func (s *stubTeamService) List(_ context.Context, _ int64) ([]domain.Team, error
 		return nil, s.listErr
 	}
 	return s.listTeams, nil
+}
+
+func (s *stubTeamService) Invite(_ context.Context, _, teamID int64, _, role string) (domain.TeamMember, error) {
+	if s.inviteErr != nil {
+		return domain.TeamMember{}, s.inviteErr
+	}
+	member := s.inviteMember
+	if member.TeamID == 0 {
+		member.TeamID = teamID
+	}
+	if member.Role == "" {
+		member.Role = domain.TeamRole(role)
+	}
+	return member, nil
 }
