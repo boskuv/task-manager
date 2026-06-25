@@ -9,7 +9,7 @@ services:
       MYSQL_USER: taskmanager
       MYSQL_PASSWORD: taskmanager
     volumes:
-      - ./docker/data/mysql:/var/lib/mysql
+      - mysql_data:/var/lib/mysql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-prootpassword"]
       interval: 10s
@@ -23,7 +23,7 @@ services:
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
-      - ./docker/data/redis:/data
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -48,3 +48,7 @@ services:
       DATABASE_DSN: "taskmanager:taskmanager@tcp(mysql:3306)/taskmanager?parseTime=true&charset=utf8mb4"
       REDIS_ADDR: "redis:6379"
       JWT_SECRET: "dev-secret-change-me"
+
+volumes:
+  mysql_data:
+  redis_data:

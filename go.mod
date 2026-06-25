@@ -2,8 +2,6 @@ module github.com/boskuv/task-manager
 
 go 1.25.0
 
-ignore docker/data
-
 require (
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
