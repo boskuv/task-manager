@@ -14,9 +14,12 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/boskuv/task-manager/internal/handler"
+	"github.com/boskuv/task-manager/internal/pkg/circuitbreaker"
+	"github.com/boskuv/task-manager/internal/pkg/email"
 	jwtmanager "github.com/boskuv/task-manager/internal/pkg/jwt"
 	mysqlrepo "github.com/boskuv/task-manager/internal/repository/mysql"
 	authuc "github.com/boskuv/task-manager/internal/usecase/auth"
+	teamuc "github.com/boskuv/task-manager/internal/usecase/team"
 )
 
 // App wires dependencies and runs the HTTP server.
@@ -41,9 +44,14 @@ func New(cfg *Config) (*App, error) {
 	}
 
 	userRepo := mysqlrepo.NewUserRepo(db)
+	teamRepo := mysqlrepo.NewTeamRepo(db)
 	jwtManager := jwtmanager.NewManager(cfg.JWT.Secret, cfg.JWT.AccessTTL)
 	authService := authuc.NewService(userRepo, jwtManager)
+	emailBreaker := circuitbreaker.New(circuitbreaker.Config{})
+	inviteMailer := email.NewMockService(emailBreaker, slog.Default())
+	teamService := teamuc.NewService(teamRepo, userRepo, inviteMailer)
 	authHandler := handler.NewAuthHandler(authService)
+	teamHandler := handler.NewTeamHandler(teamService)
 
 	return &App{
 		cfg:   cfg,
@@ -53,6 +61,7 @@ func New(cfg *Config) (*App, error) {
 			Addr:         cfg.Addr(),
 			Handler: newRouter(routerDeps{
 				auth:       authHandler,
+				teams:      teamHandler,
 				jwtManager: jwtManager,
 			}),
 			ReadTimeout:  cfg.Server.ReadTimeout,

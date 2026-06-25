@@ -9,10 +9,6 @@ import (
 	"github.com/boskuv/task-manager/internal/handler"
 )
 
-type contextKey string
-
-const userIDKey contextKey = "userID"
-
 var errMissingToken = errors.New("missing bearer token")
 
 // TokenParser validates access tokens.
@@ -36,7 +32,7 @@ func Auth(parser TokenParser) func(http.Handler) http.Handler {
 				return
 			}
 
-			ctx := context.WithValue(r.Context(), userIDKey, userID)
+			ctx := handler.ContextWithUserID(r.Context(), userID)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -44,8 +40,7 @@ func Auth(parser TokenParser) func(http.Handler) http.Handler {
 
 // UserIDFromContext returns the authenticated user id from context.
 func UserIDFromContext(ctx context.Context) (int64, bool) {
-	userID, ok := ctx.Value(userIDKey).(int64)
-	return userID, ok
+	return handler.UserIDFromContext(ctx)
 }
 
 func bearerToken(header string) (string, error) {
