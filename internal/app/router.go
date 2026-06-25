@@ -10,6 +10,7 @@ import (
 
 type routerDeps struct {
 	auth       *handler.AuthHandler
+	teams      *handler.TeamHandler
 	jwtManager *jwtmanager.Manager
 }
 
@@ -25,6 +26,11 @@ func newRouter(deps routerDeps) http.Handler {
 	if deps.jwtManager != nil {
 		protected := middleware.Auth(deps.jwtManager)
 		mux.Handle("GET /api/v1/me", protected(http.HandlerFunc(meHandler)))
+
+		if deps.teams != nil {
+			mux.Handle("POST /api/v1/teams", protected(http.HandlerFunc(deps.teams.Create)))
+			mux.Handle("GET /api/v1/teams", protected(http.HandlerFunc(deps.teams.List)))
+		}
 	}
 
 	return mux
