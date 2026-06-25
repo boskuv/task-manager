@@ -45,7 +45,7 @@ func New(cfg *Config) (*App, error) {
 	teamRepo := mysqlrepo.NewTeamRepo(db)
 	jwtManager := jwtmanager.NewManager(cfg.JWT.Secret, cfg.JWT.AccessTTL)
 	authService := authuc.NewService(userRepo, jwtManager)
-	teamService := teamuc.NewService(teamRepo)
+	teamService := teamuc.NewService(teamRepo, userRepo)
 	authHandler := handler.NewAuthHandler(authService)
 	teamHandler := handler.NewTeamHandler(teamService)
 
