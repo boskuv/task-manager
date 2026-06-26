@@ -27,7 +27,7 @@ func TestCreateSuccess(t *testing.T) {
 	}
 
 	assigneeID := int64(2)
-	svc := NewService(newMockTaskRepo(), teams)
+	svc := newTestService(newMockTaskRepo(), teams)
 
 	task, err := svc.Create(context.Background(), 1, CreateInput{
 		TeamID:      1,
@@ -64,7 +64,7 @@ func TestCreateWithoutAssignee(t *testing.T) {
 		UserID: 1,
 		Role:   domain.TeamRoleMember,
 	}
-	svc := NewService(newMockTaskRepo(), teams)
+	svc := newTestService(newMockTaskRepo(), teams)
 
 	task, err := svc.Create(context.Background(), 1, CreateInput{
 		TeamID: 1,
@@ -81,7 +81,7 @@ func TestCreateWithoutAssignee(t *testing.T) {
 func TestCreateForbiddenForNonMember(t *testing.T) {
 	t.Parallel()
 
-	svc := NewService(newMockTaskRepo(), newMockTeamRepo())
+	svc := newTestService(newMockTaskRepo(), newMockTeamRepo())
 
 	_, err := svc.Create(context.Background(), 99, CreateInput{
 		TeamID: 1,
@@ -102,7 +102,7 @@ func TestCreateAssigneeNotInTeam(t *testing.T) {
 		Role:   domain.TeamRoleMember,
 	}
 	assigneeID := int64(2)
-	svc := NewService(newMockTaskRepo(), teams)
+	svc := newTestService(newMockTaskRepo(), teams)
 
 	_, err := svc.Create(context.Background(), 1, CreateInput{
 		TeamID:     1,
@@ -123,7 +123,7 @@ func TestCreateInvalidInput(t *testing.T) {
 		UserID: 1,
 		Role:   domain.TeamRoleMember,
 	}
-	svc := NewService(newMockTaskRepo(), teams)
+	svc := newTestService(newMockTaskRepo(), teams)
 
 	tests := []struct {
 		name  string
@@ -175,7 +175,7 @@ func TestUpdateSuccess(t *testing.T) {
 	title := "New"
 	status := "in_progress"
 	assigneeID := int64(2)
-	svc := NewService(tasks, teams)
+	svc := newTestService(tasks, teams)
 
 	task, err := svc.Update(context.Background(), 1, 1, UpdateInput{
 		Title:      &title,
@@ -203,7 +203,7 @@ func TestUpdateForbiddenForNonMember(t *testing.T) {
 	tasks.tasks[1] = domain.Task{ID: 1, TeamID: 1, Title: "Task", Status: domain.TaskStatusTodo, CreatedBy: 1}
 
 	title := "New"
-	svc := NewService(tasks, newMockTeamRepo())
+	svc := newTestService(tasks, newMockTeamRepo())
 
 	_, err := svc.Update(context.Background(), 99, 1, UpdateInput{Title: &title})
 	if !errors.Is(err, domain.ErrForbidden) {
@@ -224,7 +224,7 @@ func TestUpdateAssigneeNotInTeam(t *testing.T) {
 	tasks.tasks[1] = domain.Task{ID: 1, TeamID: 1, Title: "Task", Status: domain.TaskStatusTodo, CreatedBy: 1}
 
 	assigneeID := int64(2)
-	svc := NewService(tasks, teams)
+	svc := newTestService(tasks, teams)
 
 	_, err := svc.Update(context.Background(), 1, 1, UpdateInput{AssigneeID: &assigneeID})
 	if !errors.Is(err, domain.ErrInvalidInput) {
@@ -260,7 +260,7 @@ func TestUpdateOrphanAssigneeFixed(t *testing.T) {
 	tasks.orphans[1] = true
 
 	newAssigneeID := int64(2)
-	svc := NewService(tasks, teams)
+	svc := newTestService(tasks, teams)
 
 	task, err := svc.Update(context.Background(), 1, 1, UpdateInput{AssigneeID: &newAssigneeID})
 	if err != nil {
@@ -294,11 +294,181 @@ func TestUpdateBlockedOnOrphanAssignee(t *testing.T) {
 	tasks.orphans[1] = true
 
 	title := "Updated"
-	svc := NewService(tasks, teams)
+	svc := newTestService(tasks, teams)
 
 	_, err := svc.Update(context.Background(), 1, 1, UpdateInput{Title: &title})
 	if !errors.Is(err, domain.ErrInvalidInput) {
 		t.Fatalf("error = %v, want ErrInvalidInput", err)
+	}
+}
+
+func TestUpdateRecordsHistory(t *testing.T) {
+	t.Parallel()
+
+	teams := newMockTeamRepo()
+	teams.members[memberKey{teamID: 1, userID: 1}] = domain.TeamMember{
+		TeamID: 1,
+		UserID: 1,
+		Role:   domain.TeamRoleMember,
+	}
+	teams.members[memberKey{teamID: 1, userID: 2}] = domain.TeamMember{
+		TeamID: 1,
+		UserID: 2,
+		Role:   domain.TeamRoleMember,
+	}
+
+	tasks := newMockTaskRepo()
+	tasks.tasks[1] = domain.Task{
+		ID:          1,
+		TeamID:      1,
+		Title:       "Old",
+		Description: "old desc",
+		Status:      domain.TaskStatusTodo,
+		CreatedBy:   1,
+	}
+
+	history := newMockTaskHistoryRepo()
+	title := "New"
+	description := "new desc"
+	status := "in_progress"
+	assigneeID := int64(2)
+	svc := NewService(tasks, teams, history)
+
+	_, err := svc.Update(context.Background(), 1, 1, UpdateInput{
+		Title:       &title,
+		Description: &description,
+		Status:      &status,
+		AssigneeID:  &assigneeID,
+	})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	if len(history.entries) != 4 {
+		t.Fatalf("history entries = %d, want 4", len(history.entries))
+	}
+
+	want := []domain.TaskHistory{
+		{TaskID: 1, ChangedBy: 1, Field: domain.HistoryFieldTitle, OldValue: "Old", NewValue: "New"},
+		{TaskID: 1, ChangedBy: 1, Field: domain.HistoryFieldDescription, OldValue: "old desc", NewValue: "new desc"},
+		{TaskID: 1, ChangedBy: 1, Field: domain.HistoryFieldStatus, OldValue: "todo", NewValue: "in_progress"},
+		{TaskID: 1, ChangedBy: 1, Field: domain.HistoryFieldAssignee, OldValue: "", NewValue: "2"},
+	}
+	for i, entry := range history.entries {
+		if entry.TaskID != want[i].TaskID ||
+			entry.ChangedBy != want[i].ChangedBy ||
+			entry.Field != want[i].Field ||
+			entry.OldValue != want[i].OldValue ||
+			entry.NewValue != want[i].NewValue {
+			t.Errorf("entry[%d] = %+v, want %+v", i, entry, want[i])
+		}
+	}
+}
+
+func TestUpdateSkipsHistoryWhenNothingChanged(t *testing.T) {
+	t.Parallel()
+
+	teams := newMockTeamRepo()
+	teams.members[memberKey{teamID: 1, userID: 1}] = domain.TeamMember{
+		TeamID: 1,
+		UserID: 1,
+		Role:   domain.TeamRoleMember,
+	}
+
+	tasks := newMockTaskRepo()
+	tasks.tasks[1] = domain.Task{
+		ID:          1,
+		TeamID:      1,
+		Title:       "Same",
+		Description: "desc",
+		Status:      domain.TaskStatusTodo,
+		CreatedBy:   1,
+	}
+
+	history := newMockTaskHistoryRepo()
+	title := "Same"
+	description := "desc"
+	status := "todo"
+	svc := NewService(tasks, teams, history)
+
+	_, err := svc.Update(context.Background(), 1, 1, UpdateInput{
+		Title:       &title,
+		Description: &description,
+		Status:      &status,
+	})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if len(history.entries) != 0 {
+		t.Fatalf("history entries = %d, want 0", len(history.entries))
+	}
+}
+
+func TestListHistorySuccess(t *testing.T) {
+	t.Parallel()
+
+	teams := newMockTeamRepo()
+	teams.members[memberKey{teamID: 1, userID: 1}] = domain.TeamMember{
+		TeamID: 1,
+		UserID: 1,
+		Role:   domain.TeamRoleMember,
+	}
+
+	tasks := newMockTaskRepo()
+	tasks.tasks[1] = domain.Task{
+		ID:        1,
+		TeamID:    1,
+		Title:     "Task",
+		Status:    domain.TaskStatusTodo,
+		CreatedBy: 1,
+	}
+
+	history := newMockTaskHistoryRepo()
+	history.entries = []domain.TaskHistory{
+		{ID: 1, TaskID: 1, ChangedBy: 1, Field: domain.HistoryFieldStatus, OldValue: "todo", NewValue: "done"},
+	}
+
+	svc := NewService(tasks, teams, history)
+
+	entries, err := svc.ListHistory(context.Background(), 1, 1)
+	if err != nil {
+		t.Fatalf("ListHistory: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entries count = %d, want 1", len(entries))
+	}
+	if entries[0].Field != domain.HistoryFieldStatus {
+		t.Errorf("entries[0].Field = %q, want status", entries[0].Field)
+	}
+}
+
+func TestListHistoryForbiddenForNonMember(t *testing.T) {
+	t.Parallel()
+
+	tasks := newMockTaskRepo()
+	tasks.tasks[1] = domain.Task{ID: 1, TeamID: 1, Title: "Task", Status: domain.TaskStatusTodo, CreatedBy: 1}
+	svc := newTestService(tasks, newMockTeamRepo())
+
+	_, err := svc.ListHistory(context.Background(), 99, 1)
+	if !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("error = %v, want ErrForbidden", err)
+	}
+}
+
+func TestListHistoryNotFound(t *testing.T) {
+	t.Parallel()
+
+	teams := newMockTeamRepo()
+	teams.members[memberKey{teamID: 1, userID: 1}] = domain.TeamMember{
+		TeamID: 1,
+		UserID: 1,
+		Role:   domain.TeamRoleMember,
+	}
+	svc := newTestService(newMockTaskRepo(), teams)
+
+	_, err := svc.ListHistory(context.Background(), 1, 99)
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("error = %v, want ErrNotFound", err)
 	}
 }
 
@@ -314,7 +484,7 @@ func TestListSuccess(t *testing.T) {
 	tasks := newMockTaskRepo()
 	tasks.tasks[1] = domain.Task{ID: 1, TeamID: 1, Title: "A", Status: domain.TaskStatusTodo, CreatedBy: 1}
 	tasks.tasks[2] = domain.Task{ID: 2, TeamID: 1, Title: "B", Status: domain.TaskStatusDone, CreatedBy: 1}
-	svc := NewService(tasks, teams)
+	svc := newTestService(tasks, teams)
 
 	result, err := svc.List(context.Background(), 1, ListInput{TeamID: 1, Page: 1, PageSize: 10})
 	if err != nil {
@@ -331,7 +501,7 @@ func TestListSuccess(t *testing.T) {
 func TestListForbiddenForNonMember(t *testing.T) {
 	t.Parallel()
 
-	svc := NewService(newMockTaskRepo(), newMockTeamRepo())
+	svc := newTestService(newMockTaskRepo(), newMockTeamRepo())
 
 	_, err := svc.List(context.Background(), 99, ListInput{TeamID: 1})
 	if !errors.Is(err, domain.ErrForbidden) {
@@ -348,12 +518,16 @@ func TestListInvalidStatus(t *testing.T) {
 		UserID: 1,
 		Role:   domain.TeamRoleMember,
 	}
-	svc := NewService(newMockTaskRepo(), teams)
+	svc := newTestService(newMockTaskRepo(), teams)
 
 	_, err := svc.List(context.Background(), 1, ListInput{TeamID: 1, Status: "invalid"})
 	if !errors.Is(err, domain.ErrInvalidInput) {
 		t.Fatalf("error = %v, want ErrInvalidInput", err)
 	}
+}
+
+func newTestService(tasks repository.TaskRepository, teams repository.TeamRepository) *Service {
+	return NewService(tasks, teams, newMockTaskHistoryRepo())
 }
 
 type memberKey struct {
@@ -468,6 +642,33 @@ func (m *mockTaskRepo) ListOrphanAssignees(_ context.Context) ([]domain.Task, er
 			continue
 		}
 		items = append(items, task)
+	}
+	return items, nil
+}
+
+type mockTaskHistoryRepo struct {
+	entries []domain.TaskHistory
+	nextID  int64
+}
+
+func newMockTaskHistoryRepo() *mockTaskHistoryRepo {
+	return &mockTaskHistoryRepo{nextID: 1}
+}
+
+func (m *mockTaskHistoryRepo) Insert(_ context.Context, entry domain.TaskHistory) (domain.TaskHistory, error) {
+	entry.ID = m.nextID
+	m.nextID++
+	entry.CreatedAt = time.Now().UTC()
+	m.entries = append(m.entries, entry)
+	return entry, nil
+}
+
+func (m *mockTaskHistoryRepo) ListByTaskID(_ context.Context, taskID int64) ([]domain.TaskHistory, error) {
+	items := make([]domain.TaskHistory, 0)
+	for _, entry := range m.entries {
+		if entry.TaskID == taskID {
+			items = append(items, entry)
+		}
 	}
 	return items, nil
 }

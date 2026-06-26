@@ -195,6 +195,83 @@ func TestTaskHandlerUpdateInvalidTaskID(t *testing.T) {
 	}
 }
 
+func TestTaskHandlerHistory(t *testing.T) {
+	t.Parallel()
+
+	createdAt := time.Date(2026, 6, 26, 12, 0, 0, 0, time.UTC)
+	handler := NewTaskHandler(&stubTaskService{
+		historyEntries: []domain.TaskHistory{
+			{
+				ID:        1,
+				TaskID:    5,
+				ChangedBy: 42,
+				Field:     domain.HistoryFieldStatus,
+				OldValue:  "todo",
+				NewValue:  "in_progress",
+				CreatedAt: createdAt,
+			},
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/5/history", nil)
+	req.SetPathValue("id", "5")
+	req = req.WithContext(ContextWithUserID(req.Context(), 42))
+	rec := httptest.NewRecorder()
+
+	handler.History(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var resp []dto.TaskHistoryResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp) != 1 {
+		t.Fatalf("items count = %d, want 1", len(resp))
+	}
+	if resp[0].TaskID != 5 || resp[0].Field != "status" || resp[0].OldValue != "todo" || resp[0].NewValue != "in_progress" {
+		t.Fatalf("response = %+v, want task_id=5 field=status old=todo new=in_progress", resp[0])
+	}
+}
+
+func TestTaskHandlerHistoryForbidden(t *testing.T) {
+	t.Parallel()
+
+	handler := NewTaskHandler(&stubTaskService{
+		historyErr: domain.ErrForbidden,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/5/history", nil)
+	req.SetPathValue("id", "5")
+	req = req.WithContext(ContextWithUserID(req.Context(), 42))
+	rec := httptest.NewRecorder()
+
+	handler.History(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+}
+
+func TestTaskHandlerHistoryInvalidTaskID(t *testing.T) {
+	t.Parallel()
+
+	handler := NewTaskHandler(&stubTaskService{})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/bad/history", nil)
+	req.SetPathValue("id", "bad")
+	req = req.WithContext(ContextWithUserID(req.Context(), 42))
+	rec := httptest.NewRecorder()
+
+	handler.History(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
 type stubTaskService struct {
 	createTask domain.Task
 	createErr  error
@@ -202,6 +279,8 @@ type stubTaskService struct {
 	updateErr  error
 	listResult repository.TaskListResult
 	listErr    error
+	historyEntries []domain.TaskHistory
+	historyErr     error
 }
 
 func (s *stubTaskService) Create(_ context.Context, userID int64, input taskuc.CreateInput) (domain.Task, error) {
@@ -237,4 +316,18 @@ func (s *stubTaskService) List(_ context.Context, _ int64, _ taskuc.ListInput) (
 		return repository.TaskListResult{}, s.listErr
 	}
 	return s.listResult, nil
+}
+
+func (s *stubTaskService) ListHistory(_ context.Context, _, taskID int64) ([]domain.TaskHistory, error) {
+	if s.historyErr != nil {
+		return nil, s.historyErr
+	}
+	entries := make([]domain.TaskHistory, 0, len(s.historyEntries))
+	for _, entry := range s.historyEntries {
+		if entry.TaskID == 0 {
+			entry.TaskID = taskID
+		}
+		entries = append(entries, entry)
+	}
+	return entries, nil
 }

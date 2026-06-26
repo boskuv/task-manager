@@ -38,6 +38,7 @@ func newRouter(deps routerDeps) http.Handler {
 			mux.Handle("POST /api/v1/tasks", protected(http.HandlerFunc(deps.tasks.Create)))
 			mux.Handle("GET /api/v1/tasks", protected(http.HandlerFunc(deps.tasks.List)))
 			mux.Handle("PUT /api/v1/tasks/{id}", protected(http.HandlerFunc(deps.tasks.Update)))
+			mux.Handle("GET /api/v1/tasks/{id}/history", protected(http.HandlerFunc(deps.tasks.History)))
 		}
 	}
 
