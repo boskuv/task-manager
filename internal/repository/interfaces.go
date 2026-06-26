@@ -48,3 +48,9 @@ type TaskRepository interface {
 	// ListOrphanAssignees returns tasks whose assignee is outside the task team.
 	ListOrphanAssignees(ctx context.Context) ([]domain.Task, error)
 }
+
+// TaskHistoryRepository persists task change audit records.
+type TaskHistoryRepository interface {
+	Insert(ctx context.Context, entry domain.TaskHistory) (domain.TaskHistory, error)
+	ListByTaskID(ctx context.Context, taskID int64) ([]domain.TaskHistory, error)
+}
