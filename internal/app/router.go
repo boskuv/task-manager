@@ -11,6 +11,7 @@ import (
 type routerDeps struct {
 	auth       *handler.AuthHandler
 	teams      *handler.TeamHandler
+	tasks      *handler.TaskHandler
 	jwtManager *jwtmanager.Manager
 }
 
@@ -31,6 +32,12 @@ func newRouter(deps routerDeps) http.Handler {
 			mux.Handle("POST /api/v1/teams", protected(http.HandlerFunc(deps.teams.Create)))
 			mux.Handle("GET /api/v1/teams", protected(http.HandlerFunc(deps.teams.List)))
 			mux.Handle("POST /api/v1/teams/{id}/invite", protected(http.HandlerFunc(deps.teams.Invite)))
+		}
+
+		if deps.tasks != nil {
+			mux.Handle("POST /api/v1/tasks", protected(http.HandlerFunc(deps.tasks.Create)))
+			mux.Handle("GET /api/v1/tasks", protected(http.HandlerFunc(deps.tasks.List)))
+			mux.Handle("PUT /api/v1/tasks/{id}", protected(http.HandlerFunc(deps.tasks.Update)))
 		}
 	}
 

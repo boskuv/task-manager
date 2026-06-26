@@ -21,3 +21,30 @@ type TeamRepository interface {
 	AddMember(ctx context.Context, member domain.TeamMember) error
 	GetMemberRole(ctx context.Context, teamID, userID int64) (domain.TeamRole, error)
 }
+
+// TaskFilter holds list criteria for tasks.
+type TaskFilter struct {
+	TeamID     int64
+	Status     *domain.TaskStatus
+	AssigneeID *int64
+	Page       int
+	PageSize   int
+}
+
+// TaskListResult is a paginated task list.
+type TaskListResult struct {
+	Items []domain.Task
+	Total int
+}
+
+// TaskRepository persists and loads tasks.
+type TaskRepository interface {
+	Create(ctx context.Context, task domain.Task) (domain.Task, error)
+	Update(ctx context.Context, task domain.Task) (domain.Task, error)
+	GetByID(ctx context.Context, id int64) (domain.Task, error)
+	List(ctx context.Context, filter TaskFilter) (TaskListResult, error)
+	// HasOrphanAssignee reports whether the task assignee is set but not a team member.
+	HasOrphanAssignee(ctx context.Context, taskID int64) (bool, error)
+	// ListOrphanAssignees returns tasks whose assignee is outside the task team.
+	ListOrphanAssignees(ctx context.Context) ([]domain.Task, error)
+}
