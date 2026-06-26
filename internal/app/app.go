@@ -19,6 +19,7 @@ import (
 	jwtmanager "github.com/boskuv/task-manager/internal/pkg/jwt"
 	mysqlrepo "github.com/boskuv/task-manager/internal/repository/mysql"
 	authuc "github.com/boskuv/task-manager/internal/usecase/auth"
+	taskuc "github.com/boskuv/task-manager/internal/usecase/task"
 	teamuc "github.com/boskuv/task-manager/internal/usecase/team"
 )
 
@@ -45,13 +46,16 @@ func New(cfg *Config) (*App, error) {
 
 	userRepo := mysqlrepo.NewUserRepo(db)
 	teamRepo := mysqlrepo.NewTeamRepo(db)
+	taskRepo := mysqlrepo.NewTaskRepo(db)
 	jwtManager := jwtmanager.NewManager(cfg.JWT.Secret, cfg.JWT.AccessTTL)
 	authService := authuc.NewService(userRepo, jwtManager)
 	emailBreaker := circuitbreaker.New(circuitbreaker.Config{})
 	inviteMailer := email.NewMockService(emailBreaker, slog.Default())
 	teamService := teamuc.NewService(teamRepo, userRepo, inviteMailer)
+	taskService := taskuc.NewService(taskRepo, teamRepo)
 	authHandler := handler.NewAuthHandler(authService)
 	teamHandler := handler.NewTeamHandler(teamService)
+	taskHandler := handler.NewTaskHandler(taskService)
 
 	return &App{
 		cfg:   cfg,
@@ -62,6 +66,7 @@ func New(cfg *Config) (*App, error) {
 			Handler: newRouter(routerDeps{
 				auth:       authHandler,
 				teams:      teamHandler,
+				tasks:      taskHandler,
 				jwtManager: jwtManager,
 			}),
 			ReadTimeout:  cfg.Server.ReadTimeout,
