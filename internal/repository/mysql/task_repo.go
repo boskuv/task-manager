@@ -85,25 +85,30 @@ func (r *TaskRepo) GetByID(ctx context.Context, id int64) (domain.Task, error) {
 	return scanTask(row)
 }
 
-// List returns tasks matching the given filters, ordered by creation time descending.
-func (r *TaskRepo) List(ctx context.Context, filter repository.TaskFilter) ([]domain.Task, error) {
-	query := `SELECT ` + taskSelectColumns + ` FROM tasks WHERE team_id = ?`
-	args := []any{filter.TeamID}
+const (
+	defaultTaskPageSize = 20
+	maxTaskPageSize     = 100
+)
 
-	if filter.Status != nil {
-		query += ` AND status = ?`
-		args = append(args, string(*filter.Status))
+// List returns a paginated task list matching the given filters, ordered by creation time descending.
+func (r *TaskRepo) List(ctx context.Context, filter repository.TaskFilter) (repository.TaskListResult, error) {
+	where, args := taskListWhere(filter)
+
+	var total int
+	countQuery := `SELECT COUNT(*) FROM tasks ` + where
+	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+		return repository.TaskListResult{}, fmt.Errorf("count tasks: %w", err)
 	}
-	if filter.AssigneeID != nil {
-		query += ` AND assignee_id = ?`
-		args = append(args, *filter.AssigneeID)
-	}
 
-	query += ` ORDER BY created_at DESC`
+	page, pageSize := normalizeTaskPagination(filter.Page, filter.PageSize)
+	offset := (page - 1) * pageSize
 
-	rows, err := r.db.QueryContext(ctx, query, args...)
+	listArgs := append(append([]any{}, args...), pageSize, offset)
+	query := `SELECT ` + taskSelectColumns + ` FROM tasks ` + where + ` ORDER BY created_at DESC LIMIT ? OFFSET ?`
+
+	rows, err := r.db.QueryContext(ctx, query, listArgs...)
 	if err != nil {
-		return nil, fmt.Errorf("list tasks: %w", err)
+		return repository.TaskListResult{}, fmt.Errorf("list tasks: %w", err)
 	}
 	defer rows.Close()
 
@@ -111,15 +116,44 @@ func (r *TaskRepo) List(ctx context.Context, filter repository.TaskFilter) ([]do
 	for rows.Next() {
 		task, err := scanTask(rows)
 		if err != nil {
-			return nil, err
+			return repository.TaskListResult{}, err
 		}
 		tasks = append(tasks, task)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate tasks: %w", err)
+		return repository.TaskListResult{}, fmt.Errorf("iterate tasks: %w", err)
 	}
 
-	return tasks, nil
+	return repository.TaskListResult{Items: tasks, Total: total}, nil
+}
+
+func taskListWhere(filter repository.TaskFilter) (string, []any) {
+	where := `WHERE team_id = ?`
+	args := []any{filter.TeamID}
+
+	if filter.Status != nil {
+		where += ` AND status = ?`
+		args = append(args, string(*filter.Status))
+	}
+	if filter.AssigneeID != nil {
+		where += ` AND assignee_id = ?`
+		args = append(args, *filter.AssigneeID)
+	}
+
+	return where, args
+}
+
+func normalizeTaskPagination(page, pageSize int) (int, int) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = defaultTaskPageSize
+	}
+	if pageSize > maxTaskPageSize {
+		pageSize = maxTaskPageSize
+	}
+	return page, pageSize
 }
 
 func scanTask(row rowScanner) (domain.Task, error) {
