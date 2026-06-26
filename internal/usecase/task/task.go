@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	"github.com/boskuv/task-manager/internal/domain"
@@ -37,15 +38,17 @@ type ListInput struct {
 
 // Service handles task creation, updates, and listing.
 type Service struct {
-	tasks repository.TaskRepository
-	teams repository.TeamRepository
+	tasks   repository.TaskRepository
+	teams   repository.TeamRepository
+	history repository.TaskHistoryRepository
 }
 
 // NewService creates a task use case service.
-func NewService(tasks repository.TaskRepository, teams repository.TeamRepository) *Service {
+func NewService(tasks repository.TaskRepository, teams repository.TeamRepository, history repository.TaskHistoryRepository) *Service {
 	return &Service{
-		tasks: tasks,
-		teams: teams,
+		tasks:   tasks,
+		teams:   teams,
+		history: history,
 	}
 }
 
@@ -87,6 +90,7 @@ func (s *Service) Update(ctx context.Context, actorUserID, taskID int64, input U
 	if err != nil {
 		return domain.Task{}, err
 	}
+	before := task
 
 	if err := s.ensureTeamMember(ctx, task.TeamID, actorUserID); err != nil {
 		return domain.Task{}, err
@@ -124,7 +128,16 @@ func (s *Service) Update(ctx context.Context, actorUserID, taskID int64, input U
 		task.AssigneeID = input.AssigneeID
 	}
 
-	return s.tasks.Update(ctx, task)
+	updated, err := s.tasks.Update(ctx, task)
+	if err != nil {
+		return domain.Task{}, err
+	}
+
+	if err := s.recordTaskHistory(ctx, actorUserID, before, updated); err != nil {
+		return domain.Task{}, err
+	}
+
+	return updated, nil
 }
 
 // List returns paginated tasks for a team when the actor is a member.
@@ -183,6 +196,75 @@ func (s *Service) ensureAssigneeInTeam(ctx context.Context, teamID int64, assign
 		return err
 	}
 	return nil
+}
+
+func (s *Service) recordTaskHistory(ctx context.Context, changedBy int64, before, after domain.Task) error {
+	for _, entry := range buildTaskHistoryEntries(changedBy, before, after) {
+		if _, err := s.history.Insert(ctx, entry); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func buildTaskHistoryEntries(changedBy int64, before, after domain.Task) []domain.TaskHistory {
+	entries := make([]domain.TaskHistory, 0, 4)
+
+	if before.Title != after.Title {
+		entries = append(entries, domain.TaskHistory{
+			TaskID:    after.ID,
+			ChangedBy: changedBy,
+			Field:     domain.HistoryFieldTitle,
+			OldValue:  before.Title,
+			NewValue:  after.Title,
+		})
+	}
+	if before.Description != after.Description {
+		entries = append(entries, domain.TaskHistory{
+			TaskID:    after.ID,
+			ChangedBy: changedBy,
+			Field:     domain.HistoryFieldDescription,
+			OldValue:  before.Description,
+			NewValue:  after.Description,
+		})
+	}
+	if before.Status != after.Status {
+		entries = append(entries, domain.TaskHistory{
+			TaskID:    after.ID,
+			ChangedBy: changedBy,
+			Field:     domain.HistoryFieldStatus,
+			OldValue:  string(before.Status),
+			NewValue:  string(after.Status),
+		})
+	}
+	if !assigneeEqual(before.AssigneeID, after.AssigneeID) {
+		entries = append(entries, domain.TaskHistory{
+			TaskID:    after.ID,
+			ChangedBy: changedBy,
+			Field:     domain.HistoryFieldAssignee,
+			OldValue:  formatAssigneeValue(before.AssigneeID),
+			NewValue:  formatAssigneeValue(after.AssigneeID),
+		})
+	}
+
+	return entries
+}
+
+func assigneeEqual(a, b *int64) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
+}
+
+func formatAssigneeValue(assigneeID *int64) string {
+	if assigneeID == nil {
+		return ""
+	}
+	return strconv.FormatInt(*assigneeID, 10)
 }
 
 func validateTaskContent(title, description string) (string, string, error) {
