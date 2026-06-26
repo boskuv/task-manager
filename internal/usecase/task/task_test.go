@@ -232,6 +232,76 @@ func TestUpdateAssigneeNotInTeam(t *testing.T) {
 	}
 }
 
+func TestUpdateOrphanAssigneeFixed(t *testing.T) {
+	t.Parallel()
+
+	teams := newMockTeamRepo()
+	teams.members[memberKey{teamID: 1, userID: 1}] = domain.TeamMember{
+		TeamID: 1,
+		UserID: 1,
+		Role:   domain.TeamRoleMember,
+	}
+	teams.members[memberKey{teamID: 1, userID: 2}] = domain.TeamMember{
+		TeamID: 1,
+		UserID: 2,
+		Role:   domain.TeamRoleMember,
+	}
+
+	assigneeID := int64(99)
+	tasks := newMockTaskRepo()
+	tasks.tasks[1] = domain.Task{
+		ID:         1,
+		TeamID:     1,
+		Title:      "Task",
+		Status:     domain.TaskStatusTodo,
+		AssigneeID: &assigneeID,
+		CreatedBy:  1,
+	}
+	tasks.orphans[1] = true
+
+	newAssigneeID := int64(2)
+	svc := NewService(tasks, teams)
+
+	task, err := svc.Update(context.Background(), 1, 1, UpdateInput{AssigneeID: &newAssigneeID})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if task.AssigneeID == nil || *task.AssigneeID != 2 {
+		t.Fatalf("task.AssigneeID = %v, want 2", task.AssigneeID)
+	}
+}
+
+func TestUpdateBlockedOnOrphanAssignee(t *testing.T) {
+	t.Parallel()
+
+	teams := newMockTeamRepo()
+	teams.members[memberKey{teamID: 1, userID: 1}] = domain.TeamMember{
+		TeamID: 1,
+		UserID: 1,
+		Role:   domain.TeamRoleMember,
+	}
+
+	assigneeID := int64(99)
+	tasks := newMockTaskRepo()
+	tasks.tasks[1] = domain.Task{
+		ID:         1,
+		TeamID:     1,
+		Title:      "Task",
+		Status:     domain.TaskStatusTodo,
+		AssigneeID: &assigneeID,
+		CreatedBy:  1,
+	}
+	tasks.orphans[1] = true
+
+	title := "Updated"
+	svc := NewService(tasks, teams)
+
+	_, err := svc.Update(context.Background(), 1, 1, UpdateInput{Title: &title})
+	if !errors.Is(err, domain.ErrInvalidInput) {
+		t.Fatalf("error = %v, want ErrInvalidInput", err)
+	}
+}
+
 func TestListSuccess(t *testing.T) {
 	t.Parallel()
 
@@ -324,14 +394,16 @@ func (m *mockTeamRepo) GetMemberRole(_ context.Context, teamID, userID int64) (d
 }
 
 type mockTaskRepo struct {
-	tasks  map[int64]domain.Task
-	nextID int64
+	tasks   map[int64]domain.Task
+	orphans map[int64]bool
+	nextID  int64
 }
 
 func newMockTaskRepo() *mockTaskRepo {
 	return &mockTaskRepo{
-		tasks:  make(map[int64]domain.Task),
-		nextID: 1,
+		tasks:   make(map[int64]domain.Task),
+		orphans: make(map[int64]bool),
+		nextID:  1,
 	}
 }
 
@@ -379,4 +451,23 @@ func (m *mockTaskRepo) List(_ context.Context, filter repository.TaskFilter) (re
 		items = append(items, task)
 	}
 	return repository.TaskListResult{Items: items, Total: len(items)}, nil
+}
+
+func (m *mockTaskRepo) HasOrphanAssignee(_ context.Context, taskID int64) (bool, error) {
+	return m.orphans[taskID], nil
+}
+
+func (m *mockTaskRepo) ListOrphanAssignees(_ context.Context) ([]domain.Task, error) {
+	items := make([]domain.Task, 0)
+	for id, orphan := range m.orphans {
+		if !orphan {
+			continue
+		}
+		task, ok := m.tasks[id]
+		if !ok {
+			continue
+		}
+		items = append(items, task)
+	}
+	return items, nil
 }

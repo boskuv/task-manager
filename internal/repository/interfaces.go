@@ -43,4 +43,8 @@ type TaskRepository interface {
 	Update(ctx context.Context, task domain.Task) (domain.Task, error)
 	GetByID(ctx context.Context, id int64) (domain.Task, error)
 	List(ctx context.Context, filter TaskFilter) (TaskListResult, error)
+	// HasOrphanAssignee reports whether the task assignee is set but not a team member.
+	HasOrphanAssignee(ctx context.Context, taskID int64) (bool, error)
+	// ListOrphanAssignees returns tasks whose assignee is outside the task team.
+	ListOrphanAssignees(ctx context.Context) ([]domain.Task, error)
 }

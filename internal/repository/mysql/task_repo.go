@@ -127,6 +127,60 @@ func (r *TaskRepo) List(ctx context.Context, filter repository.TaskFilter) (repo
 	return repository.TaskListResult{Items: tasks, Total: total}, nil
 }
 
+const orphanAssigneePredicate = `
+	t.assignee_id IS NOT NULL
+	AND NOT EXISTS (
+		SELECT 1
+		FROM team_members tm
+		WHERE tm.team_id = t.team_id AND tm.user_id = t.assignee_id
+	)`
+
+// HasOrphanAssignee reports whether the task assignee is set but not a team member.
+func (r *TaskRepo) HasOrphanAssignee(ctx context.Context, taskID int64) (bool, error) {
+	var orphan bool
+	err := r.db.QueryRowContext(ctx,
+		`SELECT EXISTS (
+			SELECT 1
+			FROM tasks t
+			WHERE t.id = ?
+			  AND `+orphanAssigneePredicate+`
+		)`,
+		taskID,
+	).Scan(&orphan)
+	if err != nil {
+		return false, fmt.Errorf("check orphan assignee: %w", err)
+	}
+	return orphan, nil
+}
+
+// ListOrphanAssignees returns tasks whose assignee is outside the task team.
+func (r *TaskRepo) ListOrphanAssignees(ctx context.Context) ([]domain.Task, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT `+taskSelectColumns+`
+		 FROM tasks t
+		 WHERE `+orphanAssigneePredicate+`
+		 ORDER BY t.id`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list orphan assignees: %w", err)
+	}
+	defer rows.Close()
+
+	tasks := make([]domain.Task, 0)
+	for rows.Next() {
+		task, err := scanTask(rows)
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, task)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate orphan assignees: %w", err)
+	}
+
+	return tasks, nil
+}
+
 func taskListWhere(filter repository.TaskFilter) (string, []any) {
 	where := `WHERE team_id = ?`
 	args := []any{filter.TeamID}

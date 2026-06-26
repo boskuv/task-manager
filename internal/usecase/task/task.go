@@ -92,6 +92,14 @@ func (s *Service) Update(ctx context.Context, actorUserID, taskID int64, input U
 		return domain.Task{}, err
 	}
 
+	orphan, err := s.tasks.HasOrphanAssignee(ctx, taskID)
+	if err != nil {
+		return domain.Task{}, err
+	}
+	if orphan && input.AssigneeID == nil {
+		return domain.Task{}, domain.ErrInvalidInput
+	}
+
 	if input.Title != nil {
 		title, _, err := validateTaskContent(*input.Title, task.Description)
 		if err != nil {
