@@ -404,6 +404,74 @@ func TestUpdateSkipsHistoryWhenNothingChanged(t *testing.T) {
 	}
 }
 
+func TestListHistorySuccess(t *testing.T) {
+	t.Parallel()
+
+	teams := newMockTeamRepo()
+	teams.members[memberKey{teamID: 1, userID: 1}] = domain.TeamMember{
+		TeamID: 1,
+		UserID: 1,
+		Role:   domain.TeamRoleMember,
+	}
+
+	tasks := newMockTaskRepo()
+	tasks.tasks[1] = domain.Task{
+		ID:        1,
+		TeamID:    1,
+		Title:     "Task",
+		Status:    domain.TaskStatusTodo,
+		CreatedBy: 1,
+	}
+
+	history := newMockTaskHistoryRepo()
+	history.entries = []domain.TaskHistory{
+		{ID: 1, TaskID: 1, ChangedBy: 1, Field: domain.HistoryFieldStatus, OldValue: "todo", NewValue: "done"},
+	}
+
+	svc := NewService(tasks, teams, history)
+
+	entries, err := svc.ListHistory(context.Background(), 1, 1)
+	if err != nil {
+		t.Fatalf("ListHistory: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entries count = %d, want 1", len(entries))
+	}
+	if entries[0].Field != domain.HistoryFieldStatus {
+		t.Errorf("entries[0].Field = %q, want status", entries[0].Field)
+	}
+}
+
+func TestListHistoryForbiddenForNonMember(t *testing.T) {
+	t.Parallel()
+
+	tasks := newMockTaskRepo()
+	tasks.tasks[1] = domain.Task{ID: 1, TeamID: 1, Title: "Task", Status: domain.TaskStatusTodo, CreatedBy: 1}
+	svc := newTestService(tasks, newMockTeamRepo())
+
+	_, err := svc.ListHistory(context.Background(), 99, 1)
+	if !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("error = %v, want ErrForbidden", err)
+	}
+}
+
+func TestListHistoryNotFound(t *testing.T) {
+	t.Parallel()
+
+	teams := newMockTeamRepo()
+	teams.members[memberKey{teamID: 1, userID: 1}] = domain.TeamMember{
+		TeamID: 1,
+		UserID: 1,
+		Role:   domain.TeamRoleMember,
+	}
+	svc := newTestService(newMockTaskRepo(), teams)
+
+	_, err := svc.ListHistory(context.Background(), 1, 99)
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("error = %v, want ErrNotFound", err)
+	}
+}
+
 func TestListSuccess(t *testing.T) {
 	t.Parallel()
 

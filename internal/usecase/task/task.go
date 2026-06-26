@@ -169,6 +169,24 @@ func (s *Service) List(ctx context.Context, actorUserID int64, input ListInput) 
 	return s.tasks.List(ctx, filter)
 }
 
+// ListHistory returns audit records for a task when the actor is a member of the task's team.
+func (s *Service) ListHistory(ctx context.Context, actorUserID, taskID int64) ([]domain.TaskHistory, error) {
+	if actorUserID <= 0 || taskID <= 0 {
+		return nil, domain.ErrInvalidInput
+	}
+
+	task, err := s.tasks.GetByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.ensureTeamMember(ctx, task.TeamID, actorUserID); err != nil {
+		return nil, err
+	}
+
+	return s.history.ListByTaskID(ctx, taskID)
+}
+
 func (s *Service) ensureTeamMember(ctx context.Context, teamID, userID int64) error {
 	_, err := s.teams.GetMemberRole(ctx, teamID, userID)
 	if err != nil {

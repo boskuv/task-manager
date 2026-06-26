@@ -23,6 +23,7 @@ type taskService interface {
 	Create(ctx context.Context, userID int64, input taskuc.CreateInput) (domain.Task, error)
 	Update(ctx context.Context, userID, taskID int64, input taskuc.UpdateInput) (domain.Task, error)
 	List(ctx context.Context, userID int64, input taskuc.ListInput) (repository.TaskListResult, error)
+	ListHistory(ctx context.Context, userID, taskID int64) ([]domain.TaskHistory, error)
 }
 
 // TaskHandler serves task endpoints.
@@ -137,6 +138,35 @@ func (h *TaskHandler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, taskToResponse(task))
 }
 
+// History handles GET /api/v1/tasks/{id}/history.
+func (h *TaskHandler) History(w http.ResponseWriter, r *http.Request) {
+	userID, ok := UserIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	taskID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || taskID <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid task id")
+		return
+	}
+
+	entries, err := h.tasks.ListHistory(r.Context(), userID, taskID)
+	if err != nil {
+		status, message := mapDomainError(err)
+		writeError(w, status, message)
+		return
+	}
+
+	resp := make([]dto.TaskHistoryResponse, 0, len(entries))
+	for _, entry := range entries {
+		resp = append(resp, taskHistoryToResponse(entry))
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
 func parseTaskListQuery(r *http.Request) (taskuc.ListInput, error) {
 	query := r.URL.Query()
 
@@ -213,4 +243,16 @@ func taskToResponse(task domain.Task) dto.TaskResponse {
 		UpdatedAt:   task.UpdatedAt.UTC().Format(time.RFC3339),
 	}
 	return resp
+}
+
+func taskHistoryToResponse(entry domain.TaskHistory) dto.TaskHistoryResponse {
+	return dto.TaskHistoryResponse{
+		ID:        entry.ID,
+		TaskID:    entry.TaskID,
+		ChangedBy: entry.ChangedBy,
+		Field:     entry.Field,
+		OldValue:  entry.OldValue,
+		NewValue:  entry.NewValue,
+		CreatedAt: entry.CreatedAt.UTC().Format(time.RFC3339),
+	}
 }
