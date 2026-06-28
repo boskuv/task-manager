@@ -12,6 +12,7 @@ type routerDeps struct {
 	auth       *handler.AuthHandler
 	teams      *handler.TeamHandler
 	tasks      *handler.TaskHandler
+	analytics  *handler.AnalyticsHandler
 	jwtManager *jwtmanager.Manager
 }
 
@@ -39,6 +40,11 @@ func newRouter(deps routerDeps) http.Handler {
 			mux.Handle("GET /api/v1/tasks", protected(http.HandlerFunc(deps.tasks.List)))
 			mux.Handle("PUT /api/v1/tasks/{id}", protected(http.HandlerFunc(deps.tasks.Update)))
 			mux.Handle("GET /api/v1/tasks/{id}/history", protected(http.HandlerFunc(deps.tasks.History)))
+		}
+
+		if deps.analytics != nil {
+			mux.Handle("GET /api/v1/analytics/teams/stats", protected(http.HandlerFunc(deps.analytics.ListTeamStats)))
+			mux.Handle("GET /api/v1/analytics/top-creators", protected(http.HandlerFunc(deps.analytics.ListTopCreators)))
 		}
 	}
 
