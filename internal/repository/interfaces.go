@@ -54,3 +54,9 @@ type TaskHistoryRepository interface {
 	Insert(ctx context.Context, entry domain.TaskHistory) (domain.TaskHistory, error)
 	ListByTaskID(ctx context.Context, taskID int64) ([]domain.TaskHistory, error)
 }
+
+// AnalyticsRepository runs aggregate reporting queries.
+type AnalyticsRepository interface {
+	// ListTeamStats returns each team with member count, done tasks in the last 7 days, and per-member breakdown.
+	ListTeamStats(ctx context.Context) ([]domain.TeamStats, error)
+}
