@@ -6,14 +6,17 @@ import (
 	"github.com/boskuv/task-manager/internal/handler"
 	"github.com/boskuv/task-manager/internal/handler/middleware"
 	jwtmanager "github.com/boskuv/task-manager/internal/pkg/jwt"
+	"github.com/boskuv/task-manager/internal/repository"
 )
 
 type routerDeps struct {
-	auth       *handler.AuthHandler
-	teams      *handler.TeamHandler
-	tasks      *handler.TaskHandler
-	analytics  *handler.AnalyticsHandler
-	jwtManager *jwtmanager.Manager
+	auth              *handler.AuthHandler
+	teams             *handler.TeamHandler
+	tasks             *handler.TaskHandler
+	analytics         *handler.AnalyticsHandler
+	jwtManager        *jwtmanager.Manager
+	rateLimiter       repository.RateLimiter
+	rateLimitPerMinute int
 }
 
 func newRouter(deps routerDeps) http.Handler {
@@ -26,7 +29,10 @@ func newRouter(deps routerDeps) http.Handler {
 	}
 
 	if deps.jwtManager != nil {
-		protected := middleware.Auth(deps.jwtManager)
+		protected := middleware.Chain(
+			middleware.Auth(deps.jwtManager),
+			middleware.RateLimit(deps.rateLimiter, deps.rateLimitPerMinute),
+		)
 		mux.Handle("GET /api/v1/me", protected(http.HandlerFunc(meHandler)))
 
 		if deps.teams != nil {

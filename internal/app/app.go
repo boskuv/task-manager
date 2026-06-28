@@ -57,6 +57,7 @@ func New(cfg *Config) (*App, error) {
 	inviteMailer := email.NewMockService(emailBreaker, slog.Default())
 	teamService := teamuc.NewService(teamRepo, userRepo, inviteMailer)
 	taskCache := redisrepo.NewTaskCache(rdb)
+	rateLimiter := redisrepo.NewRateLimiter(rdb, cfg.RateLimit.RequestsPerMinute)
 	taskService := taskuc.NewService(taskRepo, teamRepo, taskHistoryRepo, taskCache)
 	analyticsService := analyticsuc.NewService(analyticsRepo, teamRepo)
 	authHandler := handler.NewAuthHandler(authService)
@@ -70,12 +71,14 @@ func New(cfg *Config) (*App, error) {
 		redis: rdb,
 		server: &http.Server{
 			Addr:         cfg.Addr(),
-			Handler: newRouter(			routerDeps{
-				auth:       authHandler,
-				teams:      teamHandler,
-				tasks:      taskHandler,
-				analytics:  analyticsHandler,
-				jwtManager: jwtManager,
+			Handler: newRouter(routerDeps{
+				auth:               authHandler,
+				teams:              teamHandler,
+				tasks:              taskHandler,
+				analytics:          analyticsHandler,
+				jwtManager:         jwtManager,
+				rateLimiter:        rateLimiter,
+				rateLimitPerMinute: cfg.RateLimit.RequestsPerMinute,
 			}),
 			ReadTimeout:  cfg.Server.ReadTimeout,
 			WriteTimeout: cfg.Server.WriteTimeout,
