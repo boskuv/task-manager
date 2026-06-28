@@ -3,6 +3,8 @@ package task
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -332,7 +334,7 @@ func TestUpdateRecordsHistory(t *testing.T) {
 	description := "new desc"
 	status := "in_progress"
 	assigneeID := int64(2)
-	svc := NewService(tasks, teams, history)
+	svc := NewService(tasks, teams, history, nil)
 
 	_, err := svc.Update(context.Background(), 1, 1, UpdateInput{
 		Title:       &title,
@@ -389,7 +391,7 @@ func TestUpdateSkipsHistoryWhenNothingChanged(t *testing.T) {
 	title := "Same"
 	description := "desc"
 	status := "todo"
-	svc := NewService(tasks, teams, history)
+	svc := NewService(tasks, teams, history, nil)
 
 	_, err := svc.Update(context.Background(), 1, 1, UpdateInput{
 		Title:       &title,
@@ -428,7 +430,7 @@ func TestListHistorySuccess(t *testing.T) {
 		{ID: 1, TaskID: 1, ChangedBy: 1, Field: domain.HistoryFieldStatus, OldValue: "todo", NewValue: "done"},
 	}
 
-	svc := NewService(tasks, teams, history)
+	svc := NewService(tasks, teams, history, nil)
 
 	entries, err := svc.ListHistory(context.Background(), 1, 1)
 	if err != nil {
@@ -527,7 +529,75 @@ func TestListInvalidStatus(t *testing.T) {
 }
 
 func newTestService(tasks repository.TaskRepository, teams repository.TeamRepository) *Service {
-	return NewService(tasks, teams, newMockTaskHistoryRepo())
+	return NewService(tasks, teams, newMockTaskHistoryRepo(), nil)
+}
+
+func TestListUsesCache(t *testing.T) {
+	t.Parallel()
+
+	teams := newMockTeamRepo()
+	teams.members[memberKey{teamID: 1, userID: 1}] = domain.TeamMember{
+		TeamID: 1,
+		UserID: 1,
+		Role:   domain.TeamRoleMember,
+	}
+
+	tasks := newMockTaskRepo()
+	tasks.tasks[1] = domain.Task{ID: 1, TeamID: 1, Title: "Cached", Status: domain.TaskStatusTodo, CreatedBy: 1}
+
+	cache := newMockTaskListCache()
+	filter := repository.TaskFilter{TeamID: 1, Page: 1, PageSize: 10}
+	cache.store[cacheKey(filter)] = repository.TaskListResult{
+		Items: []domain.Task{{ID: 99, TeamID: 1, Title: "From cache", Status: domain.TaskStatusTodo, CreatedBy: 1}},
+		Total: 1,
+	}
+
+	svc := NewService(tasks, teams, newMockTaskHistoryRepo(), cache)
+
+	result, err := svc.List(context.Background(), 1, ListInput{TeamID: 1, Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(result.Items) != 1 || result.Items[0].Title != "From cache" {
+		t.Fatalf("result = %+v, want cached item", result)
+	}
+	if tasks.listCalls != 0 {
+		t.Fatalf("tasks.listCalls = %d, want 0", tasks.listCalls)
+	}
+}
+
+func TestListPopulatesCacheOnMiss(t *testing.T) {
+	t.Parallel()
+
+	teams := newMockTeamRepo()
+	teams.members[memberKey{teamID: 1, userID: 1}] = domain.TeamMember{
+		TeamID: 1,
+		UserID: 1,
+		Role:   domain.TeamRoleMember,
+	}
+
+	tasks := newMockTaskRepo()
+	tasks.tasks[1] = domain.Task{ID: 1, TeamID: 1, Title: "From DB", Status: domain.TaskStatusTodo, CreatedBy: 1}
+
+	cache := newMockTaskListCache()
+	svc := NewService(tasks, teams, newMockTaskHistoryRepo(), cache)
+
+	filter := repository.TaskFilter{TeamID: 1, Page: 1, PageSize: 10}
+	_, err := svc.List(context.Background(), 1, ListInput{TeamID: 1, Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if tasks.listCalls != 1 {
+		t.Fatalf("tasks.listCalls = %d, want 1", tasks.listCalls)
+	}
+
+	cached, ok := cache.store[cacheKey(filter)]
+	if !ok {
+		t.Fatal("expected cache entry after miss")
+	}
+	if len(cached.Items) != 1 || cached.Items[0].Title != "From DB" {
+		t.Fatalf("cached = %+v, want DB item", cached)
+	}
 }
 
 type memberKey struct {
@@ -568,9 +638,10 @@ func (m *mockTeamRepo) GetMemberRole(_ context.Context, teamID, userID int64) (d
 }
 
 type mockTaskRepo struct {
-	tasks   map[int64]domain.Task
-	orphans map[int64]bool
-	nextID  int64
+	tasks     map[int64]domain.Task
+	orphans   map[int64]bool
+	nextID    int64
+	listCalls int
 }
 
 func newMockTaskRepo() *mockTaskRepo {
@@ -609,6 +680,7 @@ func (m *mockTaskRepo) GetByID(_ context.Context, id int64) (domain.Task, error)
 }
 
 func (m *mockTaskRepo) List(_ context.Context, filter repository.TaskFilter) (repository.TaskListResult, error) {
+	m.listCalls++
 	items := make([]domain.Task, 0)
 	for _, task := range m.tasks {
 		if task.TeamID != filter.TeamID {
@@ -671,4 +743,45 @@ func (m *mockTaskHistoryRepo) ListByTaskID(_ context.Context, taskID int64) ([]d
 		}
 	}
 	return items, nil
+}
+
+type mockTaskListCache struct {
+	store map[string]repository.TaskListResult
+}
+
+func newMockTaskListCache() *mockTaskListCache {
+	return &mockTaskListCache{store: make(map[string]repository.TaskListResult)}
+}
+
+func (m *mockTaskListCache) Get(_ context.Context, filter repository.TaskFilter) (repository.TaskListResult, bool, error) {
+	result, ok := m.store[cacheKey(filter)]
+	return result, ok, nil
+}
+
+func (m *mockTaskListCache) Set(_ context.Context, filter repository.TaskFilter, result repository.TaskListResult) error {
+	m.store[cacheKey(filter)] = result
+	return nil
+}
+
+func cacheKey(filter repository.TaskFilter) string {
+	page := filter.Page
+	if page < 1 {
+		page = 1
+	}
+	pageSize := filter.PageSize
+	if pageSize < 1 {
+		pageSize = 20
+	}
+
+	status := "*"
+	if filter.Status != nil {
+		status = string(*filter.Status)
+	}
+
+	assignee := "*"
+	if filter.AssigneeID != nil {
+		assignee = strconv.FormatInt(*filter.AssigneeID, 10)
+	}
+
+	return fmt.Sprintf("%d|%s|%s|%d|%d", filter.TeamID, status, assignee, page, pageSize)
 }

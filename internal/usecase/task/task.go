@@ -41,14 +41,21 @@ type Service struct {
 	tasks   repository.TaskRepository
 	teams   repository.TeamRepository
 	history repository.TaskHistoryRepository
+	cache   repository.TaskListCache
 }
 
 // NewService creates a task use case service.
-func NewService(tasks repository.TaskRepository, teams repository.TeamRepository, history repository.TaskHistoryRepository) *Service {
+func NewService(
+	tasks repository.TaskRepository,
+	teams repository.TeamRepository,
+	history repository.TaskHistoryRepository,
+	cache repository.TaskListCache,
+) *Service {
 	return &Service{
 		tasks:   tasks,
 		teams:   teams,
 		history: history,
+		cache:   cache,
 	}
 }
 
@@ -166,7 +173,23 @@ func (s *Service) List(ctx context.Context, actorUserID int64, input ListInput) 
 		filter.Status = &taskStatus
 	}
 
-	return s.tasks.List(ctx, filter)
+	if s.cache != nil {
+		cached, ok, err := s.cache.Get(ctx, filter)
+		if err == nil && ok {
+			return cached, nil
+		}
+	}
+
+	result, err := s.tasks.List(ctx, filter)
+	if err != nil {
+		return repository.TaskListResult{}, err
+	}
+
+	if s.cache != nil {
+		_ = s.cache.Set(ctx, filter, result)
+	}
+
+	return result, nil
 }
 
 // ListHistory returns audit records for a task when the actor is a member of the task's team.
