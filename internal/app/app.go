@@ -18,6 +18,7 @@ import (
 	"github.com/boskuv/task-manager/internal/pkg/email"
 	jwtmanager "github.com/boskuv/task-manager/internal/pkg/jwt"
 	mysqlrepo "github.com/boskuv/task-manager/internal/repository/mysql"
+	analyticsuc "github.com/boskuv/task-manager/internal/usecase/analytics"
 	authuc "github.com/boskuv/task-manager/internal/usecase/auth"
 	taskuc "github.com/boskuv/task-manager/internal/usecase/task"
 	teamuc "github.com/boskuv/task-manager/internal/usecase/team"
@@ -48,15 +49,18 @@ func New(cfg *Config) (*App, error) {
 	teamRepo := mysqlrepo.NewTeamRepo(db)
 	taskRepo := mysqlrepo.NewTaskRepo(db)
 	taskHistoryRepo := mysqlrepo.NewTaskHistoryRepo(db)
+	analyticsRepo := mysqlrepo.NewAnalyticsRepo(db)
 	jwtManager := jwtmanager.NewManager(cfg.JWT.Secret, cfg.JWT.AccessTTL)
 	authService := authuc.NewService(userRepo, jwtManager)
 	emailBreaker := circuitbreaker.New(circuitbreaker.Config{})
 	inviteMailer := email.NewMockService(emailBreaker, slog.Default())
 	teamService := teamuc.NewService(teamRepo, userRepo, inviteMailer)
 	taskService := taskuc.NewService(taskRepo, teamRepo, taskHistoryRepo)
+	analyticsService := analyticsuc.NewService(analyticsRepo, teamRepo)
 	authHandler := handler.NewAuthHandler(authService)
 	teamHandler := handler.NewTeamHandler(teamService)
 	taskHandler := handler.NewTaskHandler(taskService)
+	analyticsHandler := handler.NewAnalyticsHandler(analyticsService)
 
 	return &App{
 		cfg:   cfg,
@@ -64,10 +68,11 @@ func New(cfg *Config) (*App, error) {
 		redis: rdb,
 		server: &http.Server{
 			Addr:         cfg.Addr(),
-			Handler: newRouter(routerDeps{
+			Handler: newRouter(			routerDeps{
 				auth:       authHandler,
 				teams:      teamHandler,
 				tasks:      taskHandler,
+				analytics:  analyticsHandler,
 				jwtManager: jwtManager,
 			}),
 			ReadTimeout:  cfg.Server.ReadTimeout,
