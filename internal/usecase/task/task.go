@@ -41,14 +41,21 @@ type Service struct {
 	tasks   repository.TaskRepository
 	teams   repository.TeamRepository
 	history repository.TaskHistoryRepository
+	cache   repository.TaskListCache
 }
 
 // NewService creates a task use case service.
-func NewService(tasks repository.TaskRepository, teams repository.TeamRepository, history repository.TaskHistoryRepository) *Service {
+func NewService(
+	tasks repository.TaskRepository,
+	teams repository.TeamRepository,
+	history repository.TaskHistoryRepository,
+	cache repository.TaskListCache,
+) *Service {
 	return &Service{
 		tasks:   tasks,
 		teams:   teams,
 		history: history,
+		cache:   cache,
 	}
 }
 
@@ -70,7 +77,7 @@ func (s *Service) Create(ctx context.Context, actorUserID int64, input CreateInp
 		return domain.Task{}, err
 	}
 
-	return s.tasks.Create(ctx, domain.Task{
+	created, err := s.tasks.Create(ctx, domain.Task{
 		TeamID:      input.TeamID,
 		Title:       title,
 		Description: description,
@@ -78,6 +85,12 @@ func (s *Service) Create(ctx context.Context, actorUserID int64, input CreateInp
 		AssigneeID:  input.AssigneeID,
 		CreatedBy:   actorUserID,
 	})
+	if err != nil {
+		return domain.Task{}, err
+	}
+
+	s.invalidateTeamCache(ctx, input.TeamID)
+	return created, nil
 }
 
 // Update updates a task when the actor is a member of the task's team.
@@ -137,6 +150,7 @@ func (s *Service) Update(ctx context.Context, actorUserID, taskID int64, input U
 		return domain.Task{}, err
 	}
 
+	s.invalidateTeamCache(ctx, updated.TeamID)
 	return updated, nil
 }
 
@@ -166,7 +180,23 @@ func (s *Service) List(ctx context.Context, actorUserID int64, input ListInput) 
 		filter.Status = &taskStatus
 	}
 
-	return s.tasks.List(ctx, filter)
+	if s.cache != nil {
+		cached, ok, err := s.cache.Get(ctx, filter)
+		if err == nil && ok {
+			return cached, nil
+		}
+	}
+
+	result, err := s.tasks.List(ctx, filter)
+	if err != nil {
+		return repository.TaskListResult{}, err
+	}
+
+	if s.cache != nil {
+		_ = s.cache.Set(ctx, filter, result)
+	}
+
+	return result, nil
 }
 
 // ListHistory returns audit records for a task when the actor is a member of the task's team.
@@ -185,6 +215,12 @@ func (s *Service) ListHistory(ctx context.Context, actorUserID, taskID int64) ([
 	}
 
 	return s.history.ListByTaskID(ctx, taskID)
+}
+
+func (s *Service) invalidateTeamCache(ctx context.Context, teamID int64) {
+	if s.cache != nil {
+		_ = s.cache.InvalidateTeam(ctx, teamID)
+	}
 }
 
 func (s *Service) ensureTeamMember(ctx context.Context, teamID, userID int64) error {

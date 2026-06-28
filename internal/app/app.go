@@ -18,6 +18,7 @@ import (
 	"github.com/boskuv/task-manager/internal/pkg/email"
 	jwtmanager "github.com/boskuv/task-manager/internal/pkg/jwt"
 	mysqlrepo "github.com/boskuv/task-manager/internal/repository/mysql"
+	redisrepo "github.com/boskuv/task-manager/internal/repository/redis"
 	analyticsuc "github.com/boskuv/task-manager/internal/usecase/analytics"
 	authuc "github.com/boskuv/task-manager/internal/usecase/auth"
 	taskuc "github.com/boskuv/task-manager/internal/usecase/task"
@@ -55,7 +56,8 @@ func New(cfg *Config) (*App, error) {
 	emailBreaker := circuitbreaker.New(circuitbreaker.Config{})
 	inviteMailer := email.NewMockService(emailBreaker, slog.Default())
 	teamService := teamuc.NewService(teamRepo, userRepo, inviteMailer)
-	taskService := taskuc.NewService(taskRepo, teamRepo, taskHistoryRepo)
+	taskCache := redisrepo.NewTaskCache(rdb)
+	taskService := taskuc.NewService(taskRepo, teamRepo, taskHistoryRepo, taskCache)
 	analyticsService := analyticsuc.NewService(analyticsRepo, teamRepo)
 	authHandler := handler.NewAuthHandler(authService)
 	teamHandler := handler.NewTeamHandler(teamService)
