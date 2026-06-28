@@ -16,3 +16,13 @@ type TeamStats struct {
 	DoneTasks7d int
 	Members     []TeamMemberDoneStats
 }
+
+// TeamTopCreator is a ranked task creator within a team for the current month.
+type TeamTopCreator struct {
+	TeamID       int64
+	TeamName     string
+	UserID       int64
+	Email        string
+	TasksCreated int
+	Rank         int
+}

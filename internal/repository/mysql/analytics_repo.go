@@ -11,7 +11,11 @@ import (
 
 var _ repository.AnalyticsRepository = (*AnalyticsRepo)(nil)
 
-const doneTasks7dWindow = `DATE_SUB(UTC_TIMESTAMP(), INTERVAL 7 DAY)`
+const (
+	doneTasks7dWindow    = `DATE_SUB(UTC_TIMESTAMP(), INTERVAL 7 DAY)`
+	tasksCreated1mWindow = `DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 MONTH)`
+	topCreatorsPerTeam   = 3
+)
 
 // AnalyticsRepo implements repository.AnalyticsRepository with MySQL.
 type AnalyticsRepo struct {
@@ -150,4 +154,68 @@ func (r *AnalyticsRepo) listMemberDoneStats(ctx context.Context) ([]memberDoneSt
 	}
 
 	return rowsOut, nil
+}
+
+// ListTopCreatorsPerTeam returns up to 3 users who created the most tasks per team in the last month.
+func (r *AnalyticsRepo) ListTopCreatorsPerTeam(ctx context.Context) ([]domain.TeamTopCreator, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`WITH creator_counts AS (
+			SELECT
+				tk.team_id,
+				tk.created_by AS user_id,
+				COUNT(*) AS tasks_created
+			FROM tasks tk
+			WHERE tk.created_at >= `+tasksCreated1mWindow+`
+			GROUP BY tk.team_id, tk.created_by
+		),
+		ranked AS (
+			SELECT
+				cc.team_id,
+				cc.user_id,
+				cc.tasks_created,
+				ROW_NUMBER() OVER (
+					PARTITION BY cc.team_id
+					ORDER BY cc.tasks_created DESC, cc.user_id ASC
+				) AS rank_num
+			FROM creator_counts cc
+		)
+		SELECT
+			r.team_id,
+			t.name,
+			r.user_id,
+			u.email,
+			r.tasks_created,
+			r.rank_num
+		FROM ranked r
+		INNER JOIN teams t ON t.id = r.team_id
+		INNER JOIN users u ON u.id = r.user_id
+		WHERE r.rank_num <= ?
+		ORDER BY r.team_id, r.rank_num`,
+		topCreatorsPerTeam,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list top creators per team: %w", err)
+	}
+	defer rows.Close()
+
+	creators := make([]domain.TeamTopCreator, 0)
+	for rows.Next() {
+		var creator domain.TeamTopCreator
+		if err := rows.Scan(
+			&creator.TeamID,
+			&creator.TeamName,
+			&creator.UserID,
+			&creator.Email,
+			&creator.TasksCreated,
+			&creator.Rank,
+		); err != nil {
+			return nil, fmt.Errorf("scan top creator: %w", err)
+		}
+		creators = append(creators, creator)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate top creators: %w", err)
+	}
+
+	return creators, nil
 }

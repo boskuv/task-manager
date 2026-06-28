@@ -59,4 +59,6 @@ type TaskHistoryRepository interface {
 type AnalyticsRepository interface {
 	// ListTeamStats returns each team with member count, done tasks in the last 7 days, and per-member breakdown.
 	ListTeamStats(ctx context.Context) ([]domain.TeamStats, error)
+	// ListTopCreatorsPerTeam returns up to 3 top task creators per team for the last calendar month.
+	ListTopCreatorsPerTeam(ctx context.Context) ([]domain.TeamTopCreator, error)
 }
