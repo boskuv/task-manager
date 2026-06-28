@@ -10,18 +10,23 @@ import (
 )
 
 type routerDeps struct {
-	auth              *handler.AuthHandler
-	teams             *handler.TeamHandler
-	tasks             *handler.TaskHandler
-	analytics         *handler.AnalyticsHandler
-	jwtManager        *jwtmanager.Manager
-	rateLimiter       repository.RateLimiter
+	auth               *handler.AuthHandler
+	teams              *handler.TeamHandler
+	tasks              *handler.TaskHandler
+	analytics          *handler.AnalyticsHandler
+	jwtManager         *jwtmanager.Manager
+	rateLimiter        repository.RateLimiter
 	rateLimitPerMinute int
+	metrics            *middleware.HTTPMetrics
 }
 
 func newRouter(deps routerDeps) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", healthHandler)
+
+	if deps.metrics != nil {
+		mux.Handle("GET /metrics", deps.metrics.Handler())
+	}
 
 	if deps.auth != nil {
 		mux.HandleFunc("POST /api/v1/register", deps.auth.Register)
@@ -54,7 +59,7 @@ func newRouter(deps routerDeps) http.Handler {
 		}
 	}
 
-	return mux
+	return middleware.Metrics(deps.metrics)(mux)
 }
 
 func meHandler(w http.ResponseWriter, r *http.Request) {

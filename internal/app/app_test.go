@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/boskuv/task-manager/internal/handler/middleware"
 )
 
 func TestHealthHandler(t *testing.T) {
@@ -32,7 +34,7 @@ func TestHealthHandler(t *testing.T) {
 func TestNewRouterRegistersHealthRoute(t *testing.T) {
 	t.Parallel()
 
-	mux := newRouter(routerDeps{})
+	mux := newRouter(routerDeps{metrics: middleware.NewHTTPMetrics()})
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
 
@@ -40,6 +42,30 @@ func TestNewRouterRegistersHealthRoute(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+func TestNewRouterRegistersMetricsRoute(t *testing.T) {
+	t.Parallel()
+
+	mux := newRouter(routerDeps{metrics: middleware.NewHTTPMetrics()})
+
+	healthReq := httptest.NewRequest(http.MethodGet, "/health", nil)
+	healthRec := httptest.NewRecorder()
+	mux.ServeHTTP(healthRec, healthReq)
+	if healthRec.Code != http.StatusOK {
+		t.Fatalf("health status = %d, want %d", healthRec.Code, http.StatusOK)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if !strings.Contains(rec.Body.String(), "task_manager_http_requests_total") {
+		t.Fatalf("metrics body = %q, want requests counter", rec.Body.String())
 	}
 }
 

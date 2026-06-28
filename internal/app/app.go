@@ -14,6 +14,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/boskuv/task-manager/internal/handler"
+	"github.com/boskuv/task-manager/internal/handler/middleware"
 	"github.com/boskuv/task-manager/internal/pkg/circuitbreaker"
 	"github.com/boskuv/task-manager/internal/pkg/email"
 	jwtmanager "github.com/boskuv/task-manager/internal/pkg/jwt"
@@ -64,6 +65,7 @@ func New(cfg *Config) (*App, error) {
 	teamHandler := handler.NewTeamHandler(teamService)
 	taskHandler := handler.NewTaskHandler(taskService)
 	analyticsHandler := handler.NewAnalyticsHandler(analyticsService)
+	httpMetrics := middleware.NewHTTPMetrics()
 
 	return &App{
 		cfg:   cfg,
@@ -79,6 +81,7 @@ func New(cfg *Config) (*App, error) {
 				jwtManager:         jwtManager,
 				rateLimiter:        rateLimiter,
 				rateLimitPerMinute: cfg.RateLimit.RequestsPerMinute,
+				metrics:            httpMetrics,
 			}),
 			ReadTimeout:  cfg.Server.ReadTimeout,
 			WriteTimeout: cfg.Server.WriteTimeout,
