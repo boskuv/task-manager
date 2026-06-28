@@ -600,6 +600,64 @@ func TestListPopulatesCacheOnMiss(t *testing.T) {
 	}
 }
 
+func TestCreateInvalidatesTeamCache(t *testing.T) {
+	t.Parallel()
+
+	teams := newMockTeamRepo()
+	teams.members[memberKey{teamID: 1, userID: 1}] = domain.TeamMember{
+		TeamID: 1,
+		UserID: 1,
+		Role:   domain.TeamRoleMember,
+	}
+
+	cache := newMockTaskListCache()
+	filter := repository.TaskFilter{TeamID: 1, Page: 1, PageSize: 10}
+	cache.store[cacheKey(filter)] = repository.TaskListResult{Total: 1}
+	cache.store[cacheKey(repository.TaskFilter{TeamID: 2, Page: 1, PageSize: 10})] = repository.TaskListResult{Total: 2}
+
+	svc := NewService(newMockTaskRepo(), teams, newMockTaskHistoryRepo(), cache)
+
+	_, err := svc.Create(context.Background(), 1, CreateInput{TeamID: 1, Title: "New task"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, ok := cache.store[cacheKey(filter)]; ok {
+		t.Fatal("expected team 1 cache to be invalidated")
+	}
+	if _, ok := cache.store[cacheKey(repository.TaskFilter{TeamID: 2, Page: 1, PageSize: 10})]; !ok {
+		t.Fatal("expected team 2 cache to remain")
+	}
+}
+
+func TestUpdateInvalidatesTeamCache(t *testing.T) {
+	t.Parallel()
+
+	teams := newMockTeamRepo()
+	teams.members[memberKey{teamID: 1, userID: 1}] = domain.TeamMember{
+		TeamID: 1,
+		UserID: 1,
+		Role:   domain.TeamRoleMember,
+	}
+
+	tasks := newMockTaskRepo()
+	tasks.tasks[1] = domain.Task{ID: 1, TeamID: 1, Title: "Task", Status: domain.TaskStatusTodo, CreatedBy: 1}
+
+	cache := newMockTaskListCache()
+	filter := repository.TaskFilter{TeamID: 1, Page: 1, PageSize: 10}
+	cache.store[cacheKey(filter)] = repository.TaskListResult{Total: 1}
+
+	svc := NewService(tasks, teams, newMockTaskHistoryRepo(), cache)
+
+	title := "Updated"
+	_, err := svc.Update(context.Background(), 1, 1, UpdateInput{Title: &title})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if _, ok := cache.store[cacheKey(filter)]; ok {
+		t.Fatal("expected team cache to be invalidated after update")
+	}
+}
+
 type memberKey struct {
 	teamID int64
 	userID int64
@@ -760,6 +818,16 @@ func (m *mockTaskListCache) Get(_ context.Context, filter repository.TaskFilter)
 
 func (m *mockTaskListCache) Set(_ context.Context, filter repository.TaskFilter, result repository.TaskListResult) error {
 	m.store[cacheKey(filter)] = result
+	return nil
+}
+
+func (m *mockTaskListCache) InvalidateTeam(_ context.Context, teamID int64) error {
+	prefix := fmt.Sprintf("%d|", teamID)
+	for key := range m.store {
+		if strings.HasPrefix(key, prefix) {
+			delete(m.store, key)
+		}
+	}
 	return nil
 }
 

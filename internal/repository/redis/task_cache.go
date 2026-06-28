@@ -68,8 +68,36 @@ func (c *TaskCache) Set(ctx context.Context, filter repository.TaskFilter, resul
 	return nil
 }
 
+// InvalidateTeam removes all cached task lists for the given team.
+func (c *TaskCache) InvalidateTeam(ctx context.Context, teamID int64) error {
+	pattern := taskListCachePattern(teamID)
+
+	var cursor uint64
+	for {
+		keys, next, err := c.client.Scan(ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			return fmt.Errorf("scan task list cache: %w", err)
+		}
+		if len(keys) > 0 {
+			if err := c.client.Del(ctx, keys...).Err(); err != nil {
+				return fmt.Errorf("delete task list cache: %w", err)
+			}
+		}
+		cursor = next
+		if cursor == 0 {
+			break
+		}
+	}
+
+	return nil
+}
+
 func taskListCacheKey(filter repository.TaskFilter) string {
 	return fmt.Sprintf("tasks:team:%d:filter:%s", filter.TeamID, hashTaskFilter(filter))
+}
+
+func taskListCachePattern(teamID int64) string {
+	return fmt.Sprintf("tasks:team:%d:filter:*", teamID)
 }
 
 func hashTaskFilter(filter repository.TaskFilter) string {

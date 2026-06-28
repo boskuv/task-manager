@@ -77,7 +77,7 @@ func (s *Service) Create(ctx context.Context, actorUserID int64, input CreateInp
 		return domain.Task{}, err
 	}
 
-	return s.tasks.Create(ctx, domain.Task{
+	created, err := s.tasks.Create(ctx, domain.Task{
 		TeamID:      input.TeamID,
 		Title:       title,
 		Description: description,
@@ -85,6 +85,12 @@ func (s *Service) Create(ctx context.Context, actorUserID int64, input CreateInp
 		AssigneeID:  input.AssigneeID,
 		CreatedBy:   actorUserID,
 	})
+	if err != nil {
+		return domain.Task{}, err
+	}
+
+	s.invalidateTeamCache(ctx, input.TeamID)
+	return created, nil
 }
 
 // Update updates a task when the actor is a member of the task's team.
@@ -144,6 +150,7 @@ func (s *Service) Update(ctx context.Context, actorUserID, taskID int64, input U
 		return domain.Task{}, err
 	}
 
+	s.invalidateTeamCache(ctx, updated.TeamID)
 	return updated, nil
 }
 
@@ -208,6 +215,12 @@ func (s *Service) ListHistory(ctx context.Context, actorUserID, taskID int64) ([
 	}
 
 	return s.history.ListByTaskID(ctx, taskID)
+}
+
+func (s *Service) invalidateTeamCache(ctx context.Context, teamID int64) {
+	if s.cache != nil {
+		_ = s.cache.InvalidateTeam(ctx, teamID)
+	}
 }
 
 func (s *Service) ensureTeamMember(ctx context.Context, teamID, userID int64) error {

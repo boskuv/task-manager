@@ -27,6 +27,15 @@ func TestTaskListCacheKeyFormat(t *testing.T) {
 	}
 }
 
+func TestTaskListCachePattern(t *testing.T) {
+	t.Parallel()
+
+	pattern := taskListCachePattern(7)
+	if pattern != "tasks:team:7:filter:*" {
+		t.Fatalf("pattern = %q, want tasks:team:7:filter:*", pattern)
+	}
+}
+
 func TestHashTaskFilterStableForEquivalentPagination(t *testing.T) {
 	t.Parallel()
 

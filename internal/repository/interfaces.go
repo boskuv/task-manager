@@ -59,6 +59,7 @@ type TaskHistoryRepository interface {
 type TaskListCache interface {
 	Get(ctx context.Context, filter TaskFilter) (TaskListResult, bool, error)
 	Set(ctx context.Context, filter TaskFilter, result TaskListResult) error
+	InvalidateTeam(ctx context.Context, teamID int64) error
 }
 
 // AnalyticsRepository runs aggregate reporting queries.
