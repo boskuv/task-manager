@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/boskuv/task-manager/internal/handler/middleware"
+	"github.com/boskuv/task-manager/internal/pkg/logging"
 )
 
 func TestHealthHandler(t *testing.T) {
@@ -66,6 +68,35 @@ func TestNewRouterRegistersMetricsRoute(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "task_manager_http_requests_total") {
 		t.Fatalf("metrics body = %q, want requests counter", rec.Body.String())
+	}
+}
+
+func TestNewRouterSetsRequestIDHeader(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	logger, err := logging.NewWithWriter(logging.Config{Level: "info", Format: "json"}, &buf)
+	if err != nil {
+		t.Fatalf("NewWithWriter: %v", err)
+	}
+
+	mux := newRouter(routerDeps{
+		metrics: middleware.NewHTTPMetrics(),
+		logger:  logger,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if got := rec.Header().Get(middleware.RequestIDHeader); got == "" {
+		t.Fatal("expected request id response header")
+	}
+	if !strings.Contains(buf.String(), `"msg":"http request"`) {
+		t.Fatalf("log = %q, want access log entry", buf.String())
 	}
 }
 

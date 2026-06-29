@@ -22,3 +22,7 @@ jwt:
 
 rate_limit:
   requests_per_minute: 50
+
+logging:
+  level: debug
+  format: json

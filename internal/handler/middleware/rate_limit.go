@@ -27,7 +27,7 @@ func RateLimit(limiter repository.RateLimiter, requestsPerMinute int) func(http.
 
 			allowed, err := limiter.Allow(r.Context(), rateLimitUserKey(userID))
 			if err != nil {
-				slog.Warn("rate limit check failed", "user_id", userID, "error", err)
+				slog.WarnContext(r.Context(), "rate limit check failed", "user_id", userID, "error", err)
 				next.ServeHTTP(w, r)
 				return
 			}

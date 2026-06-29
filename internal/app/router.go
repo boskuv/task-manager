@@ -1,6 +1,7 @@
 package app
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/boskuv/task-manager/internal/handler"
@@ -18,6 +19,7 @@ type routerDeps struct {
 	rateLimiter        repository.RateLimiter
 	rateLimitPerMinute int
 	metrics            *middleware.HTTPMetrics
+	logger             *slog.Logger
 }
 
 func newRouter(deps routerDeps) http.Handler {
@@ -59,7 +61,11 @@ func newRouter(deps routerDeps) http.Handler {
 		}
 	}
 
-	return middleware.Metrics(deps.metrics)(mux)
+	return middleware.Chain(
+		middleware.RequestID,
+		middleware.AccessLog(deps.logger),
+		middleware.Metrics(deps.metrics),
+	)(mux)
 }
 
 func meHandler(w http.ResponseWriter, r *http.Request) {

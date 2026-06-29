@@ -29,6 +29,12 @@ func TestLoadFromYAML(t *testing.T) {
 	if cfg.RateLimit.RequestsPerMinute != 50 {
 		t.Errorf("RateLimit.RequestsPerMinute = %d, want 50", cfg.RateLimit.RequestsPerMinute)
 	}
+	if cfg.Logging.Level != "debug" {
+		t.Errorf("Logging.Level = %q, want debug", cfg.Logging.Level)
+	}
+	if cfg.Logging.Format != "json" {
+		t.Errorf("Logging.Format = %q, want json", cfg.Logging.Format)
+	}
 	if cfg.Addr() != "127.0.0.1:9090" {
 		t.Errorf("Addr() = %q, want 127.0.0.1:9090", cfg.Addr())
 	}

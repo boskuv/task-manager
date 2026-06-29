@@ -30,7 +30,7 @@ func TestHTTPTaskListWritesRedisIntegration(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	application, err := New(cfg)
+	application, err := New(cfg, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
