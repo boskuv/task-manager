@@ -10,6 +10,7 @@ type Pagination struct {
 // ErrorResponse is the unified API error body.
 type ErrorResponse struct {
 	Error string `json:"error"`
+	Code  string `json:"code,omitempty"`
 }
 
 // ListResponse wraps a paginated collection.

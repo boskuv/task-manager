@@ -33,8 +33,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	token, err := h.auth.Register(r.Context(), req.Email, req.Password)
 	if err != nil {
-		status, message := mapDomainError(err)
-		writeError(w, status, message)
+		writeServiceError(w, r.Context(), err)
 		return
 	}
 
@@ -51,8 +50,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	token, err := h.auth.Login(r.Context(), req.Email, req.Password)
 	if err != nil {
-		status, message := mapDomainError(err)
-		writeError(w, status, message)
+		writeServiceError(w, r.Context(), err)
 		return
 	}
 

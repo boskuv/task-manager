@@ -33,8 +33,7 @@ func (h *AnalyticsHandler) ListTeamStats(w http.ResponseWriter, r *http.Request)
 
 	stats, err := h.analytics.ListTeamStats(r.Context(), userID)
 	if err != nil {
-		status, message := mapDomainError(err)
-		writeError(w, status, message)
+		writeServiceError(w, r.Context(), err)
 		return
 	}
 
@@ -56,8 +55,7 @@ func (h *AnalyticsHandler) ListTopCreators(w http.ResponseWriter, r *http.Reques
 
 	creators, err := h.analytics.ListTopCreators(r.Context(), userID)
 	if err != nil {
-		status, message := mapDomainError(err)
-		writeError(w, status, message)
+		writeServiceError(w, r.Context(), err)
 		return
 	}
 

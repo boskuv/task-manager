@@ -30,9 +30,6 @@ func AccessLog(logger *slog.Logger) func(http.Handler) http.Handler {
 				"duration_ms", time.Since(start).Milliseconds(),
 				"remote_addr", r.RemoteAddr,
 			}
-			if requestID, ok := loggingRequestID(r); ok {
-				attrs = append(attrs, "request_id", requestID)
-			}
 			if userID, ok := UserIDFromContext(r.Context()); ok {
 				attrs = append(attrs, "user_id", userID)
 			}
@@ -48,8 +45,4 @@ func AccessLog(logger *slog.Logger) func(http.Handler) http.Handler {
 			logger.Log(r.Context(), level, "http request", attrs...)
 		})
 	}
-}
-
-func loggingRequestID(r *http.Request) (string, bool) {
-	return RequestIDFromContext(r)
 }

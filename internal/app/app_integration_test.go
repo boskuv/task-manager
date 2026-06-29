@@ -5,6 +5,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	goredis "github.com/redis/go-redis/v9"
 )
@@ -48,8 +50,8 @@ func TestHTTPTaskListWritesRedisIntegration(t *testing.T) {
 		_ = client.Close()
 	})
 
-	email := "http-redis@example.com"
-	registerBody := `{"email":"` + email + `","password":"secret123","name":"HTTP Redis"}`
+	email := fmt.Sprintf("http-redis-%d@example.com", time.Now().UnixNano())
+	registerBody := fmt.Sprintf(`{"email":%q,"password":"secret123","name":"HTTP Redis"}`, email)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/register", strings.NewReader(registerBody))
 	application.server.Handler.ServeHTTP(rec, req)

@@ -63,6 +63,7 @@ func newRouter(deps routerDeps) http.Handler {
 
 	return middleware.Chain(
 		middleware.RequestID,
+		middleware.Recover(deps.logger),
 		middleware.AccessLog(deps.logger),
 		middleware.Metrics(deps.metrics),
 	)(mux)

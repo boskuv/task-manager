@@ -43,8 +43,7 @@ func (h *TeamHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	team, err := h.teams.Create(r.Context(), userID, req.Name)
 	if err != nil {
-		status, message := mapDomainError(err)
-		writeError(w, status, message)
+		writeServiceError(w, r.Context(), err)
 		return
 	}
 
@@ -61,8 +60,7 @@ func (h *TeamHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	teams, err := h.teams.List(r.Context(), userID)
 	if err != nil {
-		status, message := mapDomainError(err)
-		writeError(w, status, message)
+		writeServiceError(w, r.Context(), err)
 		return
 	}
 
@@ -96,8 +94,7 @@ func (h *TeamHandler) Invite(w http.ResponseWriter, r *http.Request) {
 
 	member, err := h.teams.Invite(r.Context(), userID, teamID, req.Email, req.Role)
 	if err != nil {
-		status, message := mapDomainError(err)
-		writeError(w, status, message)
+		writeServiceError(w, r.Context(), err)
 		return
 	}
 

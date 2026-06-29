@@ -57,8 +57,7 @@ func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 		AssigneeID:  req.AssigneeID,
 	})
 	if err != nil {
-		status, message := mapDomainError(err)
-		writeError(w, status, message)
+		writeServiceError(w, r.Context(), err)
 		return
 	}
 
@@ -75,14 +74,13 @@ func (h *TaskHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	input, err := parseTaskListQuery(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeServiceError(w, r.Context(), err)
 		return
 	}
 
 	result, err := h.tasks.List(r.Context(), userID, input)
 	if err != nil {
-		status, message := mapDomainError(err)
-		writeError(w, status, message)
+		writeServiceError(w, r.Context(), err)
 		return
 	}
 
@@ -130,8 +128,7 @@ func (h *TaskHandler) Update(w http.ResponseWriter, r *http.Request) {
 		AssigneeID:  req.AssigneeID,
 	})
 	if err != nil {
-		status, message := mapDomainError(err)
-		writeError(w, status, message)
+		writeServiceError(w, r.Context(), err)
 		return
 	}
 
@@ -154,8 +151,7 @@ func (h *TaskHandler) History(w http.ResponseWriter, r *http.Request) {
 
 	entries, err := h.tasks.ListHistory(r.Context(), userID, taskID)
 	if err != nil {
-		status, message := mapDomainError(err)
-		writeError(w, status, message)
+		writeServiceError(w, r.Context(), err)
 		return
 	}
 
@@ -172,7 +168,7 @@ func parseTaskListQuery(r *http.Request) (taskuc.ListInput, error) {
 
 	teamID, err := strconv.ParseInt(query.Get("team_id"), 10, 64)
 	if err != nil || teamID <= 0 {
-		return taskuc.ListInput{}, errInvalidQuery("invalid team_id")
+		return taskuc.ListInput{}, ClientError("invalid team_id")
 	}
 
 	input := taskuc.ListInput{
@@ -183,7 +179,7 @@ func parseTaskListQuery(r *http.Request) (taskuc.ListInput, error) {
 	if raw := query.Get("assignee_id"); raw != "" {
 		assigneeID, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil || assigneeID <= 0 {
-			return taskuc.ListInput{}, errInvalidQuery("invalid assignee_id")
+			return taskuc.ListInput{}, ClientError("invalid assignee_id")
 		}
 		input.AssigneeID = &assigneeID
 	}
@@ -191,7 +187,7 @@ func parseTaskListQuery(r *http.Request) (taskuc.ListInput, error) {
 	if raw := query.Get("page"); raw != "" {
 		page, err := strconv.Atoi(raw)
 		if err != nil || page < 0 {
-			return taskuc.ListInput{}, errInvalidQuery("invalid page")
+			return taskuc.ListInput{}, ClientError("invalid page")
 		}
 		input.Page = page
 	}
@@ -199,7 +195,7 @@ func parseTaskListQuery(r *http.Request) (taskuc.ListInput, error) {
 	if raw := query.Get("page_size"); raw != "" {
 		pageSize, err := strconv.Atoi(raw)
 		if err != nil || pageSize < 0 {
-			return taskuc.ListInput{}, errInvalidQuery("invalid page_size")
+			return taskuc.ListInput{}, ClientError("invalid page_size")
 		}
 		input.PageSize = pageSize
 	}
@@ -218,16 +214,6 @@ func normalizeTaskPagination(page, pageSize int) (int, int) {
 		pageSize = maxTaskPageSize
 	}
 	return page, pageSize
-}
-
-type invalidQueryError string
-
-func (e invalidQueryError) Error() string {
-	return string(e)
-}
-
-func errInvalidQuery(message string) error {
-	return invalidQueryError(message)
 }
 
 func taskToResponse(task domain.Task) dto.TaskResponse {

@@ -95,6 +95,9 @@ func TestAccessLogWritesStructuredEntry(t *testing.T) {
 			t.Fatalf("log = %q, want substring %q", logLine, want)
 		}
 	}
+	if strings.Count(logLine, `"request_id":"req-42"`) != 1 {
+		t.Fatalf("log = %q, want request_id exactly once", logLine)
+	}
 }
 
 func TestAccessLogIncludesUserID(t *testing.T) {
