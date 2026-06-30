@@ -39,6 +39,32 @@ func TestAuthHandlerRegister(t *testing.T) {
 	}
 }
 
+func TestAuthHandlerLogin(t *testing.T) {
+	t.Parallel()
+
+	handler := NewAuthHandler(&stubAuthService{
+		loginToken: "jwt-token",
+	})
+
+	body := bytes.NewBufferString(`{"email":"user@example.com","password":"password1"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/login", body)
+	rec := httptest.NewRecorder()
+
+	handler.Login(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var resp dto.AuthResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Token != "jwt-token" {
+		t.Errorf("token = %q, want jwt-token", resp.Token)
+	}
+}
+
 func TestAuthHandlerLoginUnauthorized(t *testing.T) {
 	t.Parallel()
 
