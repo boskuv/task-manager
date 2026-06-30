@@ -341,6 +341,61 @@ func TestTaskRepoOrphanAssigneeIntegration(t *testing.T) {
 	}
 }
 
+func TestAnalyticsRepoIntegration(t *testing.T) {
+	t.Parallel()
+
+	db := integration.MySQL(t)
+	users := mysqlrepo.NewUserRepo(db)
+	teams := mysqlrepo.NewTeamRepo(db)
+	tasks := mysqlrepo.NewTaskRepo(db)
+	analytics := mysqlrepo.NewAnalyticsRepo(db)
+	ctx := context.Background()
+
+	owner := mustCreateUser(t, users, "analytics-owner@example.com")
+	member := mustCreateUser(t, users, "analytics-member@example.com")
+	team := mustCreateTeam(t, teams, owner.ID, "Analytics Team")
+	mustAddMember(t, teams, team.ID, owner.ID, domain.TeamRoleOwner)
+	mustAddMember(t, teams, team.ID, member.ID, domain.TeamRoleMember)
+
+	if _, err := tasks.Create(ctx, domain.Task{
+		TeamID:      team.ID,
+		Title:       "Done task",
+		Description: "",
+		Status:      domain.TaskStatusDone,
+		CreatedBy:   owner.ID,
+	}); err != nil {
+		t.Fatalf("create done task: %v", err)
+	}
+	if _, err := tasks.Create(ctx, domain.Task{
+		TeamID:      team.ID,
+		Title:       "Todo task",
+		Description: "",
+		Status:      domain.TaskStatusTodo,
+		CreatedBy:   owner.ID,
+	}); err != nil {
+		t.Fatalf("create todo task: %v", err)
+	}
+
+	stats, err := analytics.ListTeamStats(ctx)
+	if err != nil {
+		t.Fatalf("ListTeamStats: %v", err)
+	}
+	if len(stats) != 1 {
+		t.Fatalf("stats count = %d, want 1", len(stats))
+	}
+	if stats[0].TeamID != team.ID || stats[0].MemberCount != 2 || stats[0].DoneTasks7d != 1 {
+		t.Fatalf("stats = %+v", stats[0])
+	}
+
+	creators, err := analytics.ListTopCreatorsPerTeam(ctx)
+	if err != nil {
+		t.Fatalf("ListTopCreatorsPerTeam: %v", err)
+	}
+	if len(creators) != 1 || creators[0].UserID != owner.ID || creators[0].TasksCreated != 2 {
+		t.Fatalf("creators = %+v", creators)
+	}
+}
+
 func TestTaskHistoryRepoIntegration(t *testing.T) {
 	t.Parallel()
 

@@ -112,3 +112,42 @@ func TestTaskCacheSetMySQLResultIntegration(t *testing.T) {
 		t.Fatal("expected cache key")
 	}
 }
+
+func TestTaskCacheInvalidateTeamIntegration(t *testing.T) {
+	t.Parallel()
+
+	client := integration.Redis(t)
+	ctx := context.Background()
+	cache := NewTaskCache(client)
+
+	filterTeam1 := repository.TaskFilter{TeamID: 1, Page: 1, PageSize: 20}
+	filterTeam2 := repository.TaskFilter{TeamID: 2, Page: 1, PageSize: 20}
+	result := repository.TaskListResult{Total: 1}
+
+	if err := cache.Set(ctx, filterTeam1, result); err != nil {
+		t.Fatalf("set team 1: %v", err)
+	}
+	if err := cache.Set(ctx, filterTeam2, result); err != nil {
+		t.Fatalf("set team 2: %v", err)
+	}
+
+	if err := cache.InvalidateTeam(ctx, 1); err != nil {
+		t.Fatalf("InvalidateTeam: %v", err)
+	}
+
+	_, ok, err := cache.Get(ctx, filterTeam1)
+	if err != nil {
+		t.Fatalf("get team 1: %v", err)
+	}
+	if ok {
+		t.Fatal("expected team 1 cache to be invalidated")
+	}
+
+	_, ok, err = cache.Get(ctx, filterTeam2)
+	if err != nil {
+		t.Fatalf("get team 2: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected team 2 cache to remain")
+	}
+}
