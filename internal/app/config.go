@@ -19,6 +19,7 @@ type Config struct {
 	Redis     RedisConfig     `yaml:"redis"`
 	JWT       JWTConfig       `yaml:"jwt"`
 	RateLimit RateLimitConfig `yaml:"rate_limit"`
+	Logging   LoggingConfig   `yaml:"logging"`
 }
 
 type ServerConfig struct {
@@ -49,6 +50,11 @@ type JWTConfig struct {
 
 type RateLimitConfig struct {
 	RequestsPerMinute int `yaml:"requests_per_minute" env:"RATE_LIMIT_REQUESTS_PER_MINUTE" env-default:"100"`
+}
+
+type LoggingConfig struct {
+	Level  string `yaml:"level" env:"LOG_LEVEL" env-default:"info"`
+	Format string `yaml:"format" env:"LOG_FORMAT" env-default:"text"`
 }
 
 // Load reads configuration from CONFIG_PATH or DefaultConfigPath.

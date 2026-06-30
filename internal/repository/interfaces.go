@@ -55,6 +55,11 @@ type TaskHistoryRepository interface {
 	ListByTaskID(ctx context.Context, taskID int64) ([]domain.TaskHistory, error)
 }
 
+// RateLimiter enforces a sliding-window request cap for a logical key.
+type RateLimiter interface {
+	Allow(ctx context.Context, key string) (bool, error)
+}
+
 // TaskListCache stores and retrieves paginated task list query results.
 type TaskListCache interface {
 	Get(ctx context.Context, filter TaskFilter) (TaskListResult, bool, error)

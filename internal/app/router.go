@@ -1,24 +1,34 @@
 package app
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/boskuv/task-manager/internal/handler"
 	"github.com/boskuv/task-manager/internal/handler/middleware"
 	jwtmanager "github.com/boskuv/task-manager/internal/pkg/jwt"
+	"github.com/boskuv/task-manager/internal/repository"
 )
 
 type routerDeps struct {
-	auth       *handler.AuthHandler
-	teams      *handler.TeamHandler
-	tasks      *handler.TaskHandler
-	analytics  *handler.AnalyticsHandler
-	jwtManager *jwtmanager.Manager
+	auth               *handler.AuthHandler
+	teams              *handler.TeamHandler
+	tasks              *handler.TaskHandler
+	analytics          *handler.AnalyticsHandler
+	jwtManager         *jwtmanager.Manager
+	rateLimiter        repository.RateLimiter
+	rateLimitPerMinute int
+	metrics            *middleware.HTTPMetrics
+	logger             *slog.Logger
 }
 
 func newRouter(deps routerDeps) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", healthHandler)
+
+	if deps.metrics != nil {
+		mux.Handle("GET /metrics", deps.metrics.Handler())
+	}
 
 	if deps.auth != nil {
 		mux.HandleFunc("POST /api/v1/register", deps.auth.Register)
@@ -26,7 +36,10 @@ func newRouter(deps routerDeps) http.Handler {
 	}
 
 	if deps.jwtManager != nil {
-		protected := middleware.Auth(deps.jwtManager)
+		protected := middleware.Chain(
+			middleware.Auth(deps.jwtManager),
+			middleware.RateLimit(deps.rateLimiter, deps.rateLimitPerMinute),
+		)
 		mux.Handle("GET /api/v1/me", protected(http.HandlerFunc(meHandler)))
 
 		if deps.teams != nil {
@@ -48,7 +61,12 @@ func newRouter(deps routerDeps) http.Handler {
 		}
 	}
 
-	return mux
+	return middleware.Chain(
+		middleware.RequestID,
+		middleware.Recover(deps.logger),
+		middleware.AccessLog(deps.logger),
+		middleware.Metrics(deps.metrics),
+	)(mux)
 }
 
 func meHandler(w http.ResponseWriter, r *http.Request) {

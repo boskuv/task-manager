@@ -3,20 +3,27 @@ package main
 import (
 	"log"
 	"log/slog"
-	"os"
 
 	"github.com/boskuv/task-manager/internal/app"
+	"github.com/boskuv/task-manager/internal/pkg/logging"
 )
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, nil)))
-
 	cfg, err := app.Load()
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
 
-	application, err := app.New(cfg)
+	logger, err := logging.New(logging.Config{
+		Level:  cfg.Logging.Level,
+		Format: cfg.Logging.Format,
+	})
+	if err != nil {
+		log.Fatalf("init logger: %v", err)
+	}
+	slog.SetDefault(logger)
+
+	application, err := app.New(cfg, logger)
 	if err != nil {
 		log.Fatalf("init app: %v", err)
 	}
