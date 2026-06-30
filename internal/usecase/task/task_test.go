@@ -80,6 +80,64 @@ func TestCreateWithoutAssignee(t *testing.T) {
 	}
 }
 
+func TestCreateInvalidAssigneeID(t *testing.T) {
+	t.Parallel()
+
+	teams := newMockTeamRepo()
+	teams.members[memberKey{teamID: 1, userID: 1}] = domain.TeamMember{
+		TeamID: 1,
+		UserID: 1,
+		Role:   domain.TeamRoleMember,
+	}
+	assigneeID := int64(0)
+	svc := newTestService(newMockTaskRepo(), teams)
+
+	_, err := svc.Create(context.Background(), 1, CreateInput{
+		TeamID:     1,
+		Title:      "Task",
+		AssigneeID: &assigneeID,
+	})
+	if !errors.Is(err, domain.ErrInvalidInput) {
+		t.Fatalf("error = %v, want ErrInvalidInput", err)
+	}
+}
+
+func TestCreateTeamMemberRepositoryError(t *testing.T) {
+	t.Parallel()
+
+	teams := newMockTeamRepo()
+	teams.getMemberRoleErr = errors.New("db unavailable")
+	svc := newTestService(newMockTaskRepo(), teams)
+
+	_, err := svc.Create(context.Background(), 1, CreateInput{TeamID: 1, Title: "Task"})
+	if err == nil || err.Error() != "db unavailable" {
+		t.Fatalf("error = %v, want db unavailable", err)
+	}
+}
+
+func TestCreateAssigneeRepositoryError(t *testing.T) {
+	t.Parallel()
+
+	teams := newMockTeamRepo()
+	teams.members[memberKey{teamID: 1, userID: 1}] = domain.TeamMember{
+		TeamID: 1,
+		UserID: 1,
+		Role:   domain.TeamRoleMember,
+	}
+	teams.getMemberRoleErrOnUser = map[int64]error{2: errors.New("db unavailable")}
+	assigneeID := int64(2)
+	svc := newTestService(newMockTaskRepo(), teams)
+
+	_, err := svc.Create(context.Background(), 1, CreateInput{
+		TeamID:     1,
+		Title:      "Task",
+		AssigneeID: &assigneeID,
+	})
+	if err == nil || err.Error() != "db unavailable" {
+		t.Fatalf("error = %v, want db unavailable", err)
+	}
+}
+
 func TestCreateForbiddenForNonMember(t *testing.T) {
 	t.Parallel()
 
@@ -195,6 +253,108 @@ func TestUpdateSuccess(t *testing.T) {
 	}
 	if task.AssigneeID == nil || *task.AssigneeID != 2 {
 		t.Errorf("task.AssigneeID = %v, want 2", task.AssigneeID)
+	}
+}
+
+func TestUpdateInvalidIDs(t *testing.T) {
+	t.Parallel()
+
+	tasks := newMockTaskRepo()
+	tasks.tasks[1] = domain.Task{ID: 1, TeamID: 1, Title: "Task", Status: domain.TaskStatusTodo, CreatedBy: 1}
+	title := "New"
+	svc := newTestService(tasks, newMockTeamRepo())
+
+	_, err := svc.Update(context.Background(), 0, 1, UpdateInput{Title: &title})
+	if !errors.Is(err, domain.ErrInvalidInput) {
+		t.Fatalf("invalid actor: error = %v, want ErrInvalidInput", err)
+	}
+
+	_, err = svc.Update(context.Background(), 1, 0, UpdateInput{Title: &title})
+	if !errors.Is(err, domain.ErrInvalidInput) {
+		t.Fatalf("invalid task id: error = %v, want ErrInvalidInput", err)
+	}
+}
+
+func TestUpdateNotFound(t *testing.T) {
+	t.Parallel()
+
+	teams := newMockTeamRepo()
+	teams.members[memberKey{teamID: 1, userID: 1}] = domain.TeamMember{
+		TeamID: 1,
+		UserID: 1,
+		Role:   domain.TeamRoleMember,
+	}
+	title := "New"
+	svc := newTestService(newMockTaskRepo(), teams)
+
+	_, err := svc.Update(context.Background(), 1, 99, UpdateInput{Title: &title})
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestUpdateInvalidStatus(t *testing.T) {
+	t.Parallel()
+
+	teams := newMockTeamRepo()
+	teams.members[memberKey{teamID: 1, userID: 1}] = domain.TeamMember{
+		TeamID: 1,
+		UserID: 1,
+		Role:   domain.TeamRoleMember,
+	}
+	tasks := newMockTaskRepo()
+	tasks.tasks[1] = domain.Task{ID: 1, TeamID: 1, Title: "Task", Status: domain.TaskStatusTodo, CreatedBy: 1}
+
+	status := "invalid"
+	svc := newTestService(tasks, teams)
+
+	_, err := svc.Update(context.Background(), 1, 1, UpdateInput{Status: &status})
+	if !errors.Is(err, domain.ErrInvalidInput) {
+		t.Fatalf("error = %v, want ErrInvalidInput", err)
+	}
+}
+
+func TestUpdateInvalidAssigneeID(t *testing.T) {
+	t.Parallel()
+
+	teams := newMockTeamRepo()
+	teams.members[memberKey{teamID: 1, userID: 1}] = domain.TeamMember{
+		TeamID: 1,
+		UserID: 1,
+		Role:   domain.TeamRoleMember,
+	}
+	tasks := newMockTaskRepo()
+	tasks.tasks[1] = domain.Task{ID: 1, TeamID: 1, Title: "Task", Status: domain.TaskStatusTodo, CreatedBy: 1}
+
+	assigneeID := int64(-1)
+	svc := newTestService(tasks, teams)
+
+	_, err := svc.Update(context.Background(), 1, 1, UpdateInput{AssigneeID: &assigneeID})
+	if !errors.Is(err, domain.ErrInvalidInput) {
+		t.Fatalf("error = %v, want ErrInvalidInput", err)
+	}
+}
+
+func TestUpdateHistoryInsertError(t *testing.T) {
+	t.Parallel()
+
+	teams := newMockTeamRepo()
+	teams.members[memberKey{teamID: 1, userID: 1}] = domain.TeamMember{
+		TeamID: 1,
+		UserID: 1,
+		Role:   domain.TeamRoleMember,
+	}
+	tasks := newMockTaskRepo()
+	tasks.tasks[1] = domain.Task{ID: 1, TeamID: 1, Title: "Old", Status: domain.TaskStatusTodo, CreatedBy: 1}
+
+	history := newMockTaskHistoryRepo()
+	history.insertErr = errors.New("history write failed")
+	title := "New"
+	svc := NewService(tasks, teams, history, nil)
+
+	_, err := svc.Update(context.Background(), 1, 1, UpdateInput{Title: &title})
+	if err == nil || err.Error() != "history write failed" {
+		t.Fatalf("error = %v, want history write failed", err)
 	}
 }
 
@@ -444,6 +604,24 @@ func TestListHistorySuccess(t *testing.T) {
 	}
 }
 
+func TestListHistoryInvalidInput(t *testing.T) {
+	t.Parallel()
+
+	tasks := newMockTaskRepo()
+	tasks.tasks[1] = domain.Task{ID: 1, TeamID: 1, Title: "Task", Status: domain.TaskStatusTodo, CreatedBy: 1}
+	svc := newTestService(tasks, newMockTeamRepo())
+
+	_, err := svc.ListHistory(context.Background(), 0, 1)
+	if !errors.Is(err, domain.ErrInvalidInput) {
+		t.Fatalf("invalid actor: error = %v, want ErrInvalidInput", err)
+	}
+
+	_, err = svc.ListHistory(context.Background(), 1, 0)
+	if !errors.Is(err, domain.ErrInvalidInput) {
+		t.Fatalf("invalid task id: error = %v, want ErrInvalidInput", err)
+	}
+}
+
 func TestListHistoryForbiddenForNonMember(t *testing.T) {
 	t.Parallel()
 
@@ -497,6 +675,73 @@ func TestListSuccess(t *testing.T) {
 	}
 	if len(result.Items) != 2 {
 		t.Fatalf("items count = %d, want 2", len(result.Items))
+	}
+}
+
+func TestListInvalidInput(t *testing.T) {
+	t.Parallel()
+
+	teams := newMockTeamRepo()
+	teams.members[memberKey{teamID: 1, userID: 1}] = domain.TeamMember{
+		TeamID: 1,
+		UserID: 1,
+		Role:   domain.TeamRoleMember,
+	}
+	svc := newTestService(newMockTaskRepo(), teams)
+
+	_, err := svc.List(context.Background(), 0, ListInput{TeamID: 1})
+	if !errors.Is(err, domain.ErrInvalidInput) {
+		t.Fatalf("invalid actor: error = %v, want ErrInvalidInput", err)
+	}
+
+	_, err = svc.List(context.Background(), 1, ListInput{TeamID: 0})
+	if !errors.Is(err, domain.ErrInvalidInput) {
+		t.Fatalf("invalid team: error = %v, want ErrInvalidInput", err)
+	}
+}
+
+func TestListWithStatusFilter(t *testing.T) {
+	t.Parallel()
+
+	teams := newMockTeamRepo()
+	teams.members[memberKey{teamID: 1, userID: 1}] = domain.TeamMember{
+		TeamID: 1,
+		UserID: 1,
+		Role:   domain.TeamRoleMember,
+	}
+	tasks := newMockTaskRepo()
+	tasks.tasks[1] = domain.Task{ID: 1, TeamID: 1, Title: "Todo", Status: domain.TaskStatusTodo, CreatedBy: 1}
+	tasks.tasks[2] = domain.Task{ID: 2, TeamID: 1, Title: "Done", Status: domain.TaskStatusDone, CreatedBy: 1}
+	svc := newTestService(tasks, teams)
+
+	result, err := svc.List(context.Background(), 1, ListInput{TeamID: 1, Status: "done"})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if result.Total != 1 {
+		t.Fatalf("result.Total = %d, want 1", result.Total)
+	}
+	if len(result.Items) != 1 || result.Items[0].Status != domain.TaskStatusDone {
+		t.Fatalf("result = %+v, want single done task", result)
+	}
+}
+
+func TestListRepositoryError(t *testing.T) {
+	t.Parallel()
+
+	teams := newMockTeamRepo()
+	teams.members[memberKey{teamID: 1, userID: 1}] = domain.TeamMember{
+		TeamID: 1,
+		UserID: 1,
+		Role:   domain.TeamRoleMember,
+	}
+	tasks := newMockTaskRepo()
+	tasks.listErr = errors.New("db unavailable")
+	svc := newTestService(tasks, teams)
+
+	_, err := svc.List(context.Background(), 1, ListInput{TeamID: 1})
+	if err == nil || err.Error() != "db unavailable" {
+		t.Fatalf("error = %v, want db unavailable", err)
 	}
 }
 
@@ -664,7 +909,9 @@ type memberKey struct {
 }
 
 type mockTeamRepo struct {
-	members map[memberKey]domain.TeamMember
+	members                map[memberKey]domain.TeamMember
+	getMemberRoleErr       error
+	getMemberRoleErrOnUser map[int64]error
 }
 
 func newMockTeamRepo() *mockTeamRepo {
@@ -688,6 +935,12 @@ func (m *mockTeamRepo) AddMember(context.Context, domain.TeamMember) error {
 }
 
 func (m *mockTeamRepo) GetMemberRole(_ context.Context, teamID, userID int64) (domain.TeamRole, error) {
+	if m.getMemberRoleErr != nil {
+		return "", m.getMemberRoleErr
+	}
+	if err, ok := m.getMemberRoleErrOnUser[userID]; ok {
+		return "", err
+	}
 	member, ok := m.members[memberKey{teamID: teamID, userID: userID}]
 	if !ok {
 		return "", domain.ErrNotFound
@@ -700,6 +953,7 @@ type mockTaskRepo struct {
 	orphans   map[int64]bool
 	nextID    int64
 	listCalls int
+	listErr   error
 }
 
 func newMockTaskRepo() *mockTaskRepo {
@@ -738,6 +992,9 @@ func (m *mockTaskRepo) GetByID(_ context.Context, id int64) (domain.Task, error)
 }
 
 func (m *mockTaskRepo) List(_ context.Context, filter repository.TaskFilter) (repository.TaskListResult, error) {
+	if m.listErr != nil {
+		return repository.TaskListResult{}, m.listErr
+	}
 	m.listCalls++
 	items := make([]domain.Task, 0)
 	for _, task := range m.tasks {
@@ -777,8 +1034,9 @@ func (m *mockTaskRepo) ListOrphanAssignees(_ context.Context) ([]domain.Task, er
 }
 
 type mockTaskHistoryRepo struct {
-	entries []domain.TaskHistory
-	nextID  int64
+	entries   []domain.TaskHistory
+	nextID    int64
+	insertErr error
 }
 
 func newMockTaskHistoryRepo() *mockTaskHistoryRepo {
@@ -786,6 +1044,9 @@ func newMockTaskHistoryRepo() *mockTaskHistoryRepo {
 }
 
 func (m *mockTaskHistoryRepo) Insert(_ context.Context, entry domain.TaskHistory) (domain.TaskHistory, error) {
+	if m.insertErr != nil {
+		return domain.TaskHistory{}, m.insertErr
+	}
 	entry.ID = m.nextID
 	m.nextID++
 	entry.CreatedAt = time.Now().UTC()
