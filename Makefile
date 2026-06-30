@@ -1,9 +1,11 @@
-.PHONY: help build run test test-cover migrate migrate-down migrate-create clean lint fmt
+.PHONY: help build run test test-integration test-cover test-cover-core test-cover-html migrate migrate-down migrate-create clean lint fmt
 
 APP_NAME    := task-manager
 BINARY      := bin/$(APP_NAME)
 MAIN        := ./cmd/api
 PACKAGES    := ./cmd/... ./internal/...
+COVER_CORE_PKGS := ./internal/usecase/... ./internal/repository/...
+COVERAGE_MIN    := 85
 MIGRATIONS  := migrations
 GOOSE       ?= go tool goose
 DATABASE_DSN ?= $(shell grep -E '^\s+dsn:' configs/config.yaml 2>/dev/null | head -1 | awk '{print $$2}' | tr -d '"')
@@ -18,12 +20,27 @@ build: ## Build API binary
 run: ## Run API locally
 	go run $(MAIN)
 
-test: ## Run all tests
+test: ## Run unit tests
 	go test $(PACKAGES) -v -race -count=1
 
-test-cover: ## Run tests with coverage report
-	go test $(PACKAGES) -race -coverprofile=coverage.out -covermode=atomic
+test-integration: ## Run integration tests (requires Docker)
+	go test $(PACKAGES) -tags=integration -v -race -count=1
+
+test-cover: ## Run all packages with coverage report
+	go test $(PACKAGES) -race -coverprofile=coverage.out -covermode=atomic -count=1
 	go tool cover -func=coverage.out
+
+test-cover-core: ## Run usecase+repo tests with coverage (requires Docker, min $(COVERAGE_MIN)%)
+	go test $(COVER_CORE_PKGS) -tags=integration -coverprofile=coverage.out -covermode=atomic -count=1
+	@echo "--- Coverage summary (usecase + repository) ---"
+	go tool cover -func=coverage.out
+	@total=$$(go tool cover -func=coverage.out | awk '/^total:/ {gsub("%","",$$3); print $$3}'); \
+	echo "Total: $$total% (minimum $(COVERAGE_MIN)%)"; \
+	awk -v total="$$total" -v min="$(COVERAGE_MIN)" 'BEGIN { if (total+0 < min+0) { print "coverage below minimum"; exit 1 } }'
+
+test-cover-html: test-cover-core ## Generate HTML coverage report for usecase+repo
+	go tool cover -html=coverage.out -o coverage.html
+	@echo "Wrote coverage.html"
 
 migrate: ## Apply database migrations
 	$(GOOSE) -dir $(MIGRATIONS) mysql "$(DATABASE_DSN)" up
@@ -42,4 +59,4 @@ fmt: ## Format Go code
 	gofmt -s -w .
 
 clean: ## Remove build artifacts
-	rm -rf bin/ coverage.out coverage.html
+	rm -rf bin/ coverage.out coverage.html coverage.txt

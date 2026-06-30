@@ -46,7 +46,12 @@ func TestRegisterDuplicateEmail(t *testing.T) {
 
 	_, err = svc.Register(context.Background(), "user@example.com", "password2")
 	if !errors.Is(err, domain.ErrConflict) {
-		t.Fatalf("error = %v, want ErrConflict", err)
+		t.Fatalf("same email: error = %v, want ErrConflict", err)
+	}
+
+	_, err = svc.Register(context.Background(), "User@Example.com", "password3")
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("case-insensitive duplicate: error = %v, want ErrConflict", err)
 	}
 }
 
@@ -96,6 +101,35 @@ func TestLoginSuccess(t *testing.T) {
 	}
 }
 
+func TestLoginInvalidInput(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(newMockUserRepo(), &mockTokenIssuer{})
+
+	_, err := svc.Login(context.Background(), "", "password1")
+	if !errors.Is(err, domain.ErrInvalidInput) {
+		t.Fatalf("empty email: error = %v, want ErrInvalidInput", err)
+	}
+
+	_, err = svc.Login(context.Background(), "user@example.com", "short")
+	if !errors.Is(err, domain.ErrInvalidInput) {
+		t.Fatalf("short password: error = %v, want ErrInvalidInput", err)
+	}
+}
+
+func TestLoginRepositoryError(t *testing.T) {
+	t.Parallel()
+
+	repo := newMockUserRepo()
+	repo.getByEmailErr = errors.New("db unavailable")
+	svc := NewService(repo, &mockTokenIssuer{})
+
+	_, err := svc.Login(context.Background(), "user@example.com", "password1")
+	if err == nil || err.Error() != "db unavailable" {
+		t.Fatalf("error = %v, want db unavailable", err)
+	}
+}
+
 func TestLoginInvalidCredentials(t *testing.T) {
 	t.Parallel()
 
@@ -118,8 +152,9 @@ func TestLoginInvalidCredentials(t *testing.T) {
 }
 
 type mockUserRepo struct {
-	users  map[string]domain.User
-	nextID int64
+	users         map[string]domain.User
+	nextID        int64
+	getByEmailErr error
 }
 
 func newMockUserRepo() *mockUserRepo {
@@ -140,6 +175,9 @@ func (m *mockUserRepo) Create(_ context.Context, user domain.User) (domain.User,
 }
 
 func (m *mockUserRepo) GetByEmail(_ context.Context, email string) (domain.User, error) {
+	if m.getByEmailErr != nil {
+		return domain.User{}, m.getByEmailErr
+	}
 	user, ok := m.users[email]
 	if !ok {
 		return domain.User{}, domain.ErrNotFound
