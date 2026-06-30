@@ -4,35 +4,36 @@ package redis
 
 import (
 	"context"
-	"database/sql"
-	"encoding/json"
+	"os"
+	"strconv"
 	"testing"
-	"time"
-
-	goredis "github.com/redis/go-redis/v9"
-	_ "github.com/go-sql-driver/mysql"
 
 	"github.com/boskuv/task-manager/internal/domain"
-	mysqlrepo "github.com/boskuv/task-manager/internal/repository/mysql"
 	"github.com/boskuv/task-manager/internal/repository"
+	mysqlrepo "github.com/boskuv/task-manager/internal/repository/mysql"
+	"github.com/boskuv/task-manager/internal/testutil/integration"
 )
 
+func TestMain(m *testing.M) {
+	code := m.Run()
+	integration.Shutdown()
+	os.Exit(code)
+}
+
 func TestTaskCacheSetGetIntegration(t *testing.T) {
-	client := newIntegrationRedisClient(t)
+	t.Parallel()
+
+	client := integration.Redis(t)
 	ctx := context.Background()
 
 	cache := NewTaskCache(client)
 	filter := repository.TaskFilter{TeamID: 99, Page: 1, PageSize: 20}
-	now := time.Now().UTC()
 	want := repository.TaskListResult{
 		Items: []domain.Task{{
-			ID:        1,
-			TeamID:    99,
-			Title:     "cached",
-			Status:    domain.TaskStatusTodo,
-			CreatedBy: 1,
-			CreatedAt: now,
-			UpdatedAt: now,
+			ID:     1,
+			TeamID: 99,
+			Title:  "cached",
+			Status: domain.TaskStatusTodo,
 		}},
 		Total: 1,
 	}
@@ -54,55 +55,60 @@ func TestTaskCacheSetGetIntegration(t *testing.T) {
 }
 
 func TestTaskCacheSetMySQLResultIntegration(t *testing.T) {
-	db, err := sql.Open("mysql", "taskmanager:taskmanager@tcp(localhost:3306)/taskmanager?parseTime=true&charset=utf8mb4")
-	if err != nil {
-		t.Fatalf("open mysql: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	t.Parallel()
 
+	db := integration.MySQL(t)
 	ctx := context.Background()
-	if err := db.PingContext(ctx); err != nil {
-		t.Skipf("mysql not available: %v", err)
+
+	users := mysqlrepo.NewUserRepo(db)
+	teams := mysqlrepo.NewTeamRepo(db)
+	tasks := mysqlrepo.NewTaskRepo(db)
+
+	owner, err := users.Create(ctx, domain.User{Email: "cache-owner@example.com", PasswordHash: "hash"})
+	if err != nil {
+		t.Fatalf("create owner: %v", err)
+	}
+	team, err := teams.Create(ctx, domain.Team{Name: "Cache Team", CreatedBy: owner.ID})
+	if err != nil {
+		t.Fatalf("create team: %v", err)
+	}
+	if err := teams.AddMember(ctx, domain.TeamMember{
+		TeamID: team.ID,
+		UserID: owner.ID,
+		Role:   domain.TeamRoleOwner,
+	}); err != nil {
+		t.Fatalf("add owner: %v", err)
+	}
+	if _, err := tasks.Create(ctx, domain.Task{
+		TeamID:      team.ID,
+		Title:       "Listed task",
+		Description: "",
+		Status:      domain.TaskStatusTodo,
+		CreatedBy:   owner.ID,
+	}); err != nil {
+		t.Fatalf("create task: %v", err)
 	}
 
 	repo := mysqlrepo.NewTaskRepo(db)
-	result, err := repo.List(ctx, repository.TaskFilter{TeamID: 1, Page: 1, PageSize: 20})
+	result, err := repo.List(ctx, repository.TaskFilter{TeamID: team.ID, Page: 1, PageSize: 20})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-
-	if _, err := json.Marshal(result); err != nil {
-		t.Fatalf("marshal mysql result: %v", err)
+	if result.Total != 1 {
+		t.Fatalf("result.Total = %d, want 1", result.Total)
 	}
 
-	client := newIntegrationRedisClient(t)
+	client := integration.Redis(t)
 	cache := NewTaskCache(client)
-	if err := cache.Set(ctx, repository.TaskFilter{TeamID: 1, Page: 1, PageSize: 20}, result); err != nil {
+	if err := cache.Set(ctx, repository.TaskFilter{TeamID: team.ID, Page: 1, PageSize: 20}, result); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 
-	keys, err := client.Keys(ctx, "tasks:team:1:filter:*").Result()
+	keys, err := client.Keys(ctx, "tasks:team:"+strconv.FormatInt(team.ID, 10)+":filter:*").Result()
 	if err != nil {
 		t.Fatalf("Keys: %v", err)
 	}
 	if len(keys) == 0 {
 		t.Fatal("expected cache key")
 	}
-}
-
-func newIntegrationRedisClient(t *testing.T) *goredis.Client {
-	t.Helper()
-
-	client := goredis.NewClient(&goredis.Options{Addr: "localhost:6379"})
-	ctx := context.Background()
-	if err := client.Ping(ctx).Err(); err != nil {
-		t.Skipf("redis not available: %v", err)
-	}
-
-	t.Cleanup(func() {
-		_ = client.FlushDB(ctx).Err()
-		_ = client.Close()
-	})
-
-	return client
 }

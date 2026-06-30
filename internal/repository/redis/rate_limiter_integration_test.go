@@ -6,10 +6,14 @@ import (
 	"context"
 	"fmt"
 	"testing"
+
+	"github.com/boskuv/task-manager/internal/testutil/integration"
 )
 
 func TestRateLimiterSlidingWindowIntegration(t *testing.T) {
-	client := newIntegrationRedisClient(t)
+	t.Parallel()
+
+	client := integration.Redis(t)
 	ctx := context.Background()
 
 	const limit = 3
@@ -36,7 +40,9 @@ func TestRateLimiterSlidingWindowIntegration(t *testing.T) {
 }
 
 func TestRateLimiterIsolatesKeysIntegration(t *testing.T) {
-	client := newIntegrationRedisClient(t)
+	t.Parallel()
+
+	client := integration.Redis(t)
 	ctx := context.Background()
 
 	limiter := NewRateLimiter(client, 1)

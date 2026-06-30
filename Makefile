@@ -18,8 +18,11 @@ build: ## Build API binary
 run: ## Run API locally
 	go run $(MAIN)
 
-test: ## Run all tests
+test: ## Run unit tests
 	go test $(PACKAGES) -v -race -count=1
+
+test-integration: ## Run integration tests (requires Docker)
+	go test $(PACKAGES) -tags=integration -v -race -count=1
 
 test-cover: ## Run tests with coverage report
 	go test $(PACKAGES) -race -coverprofile=coverage.out -covermode=atomic

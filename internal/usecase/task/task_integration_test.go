@@ -4,29 +4,29 @@ package task
 
 import (
 	"context"
-	"database/sql"
+	"os"
+	"strconv"
 	"testing"
 	"time"
 
-	goredis "github.com/redis/go-redis/v9"
-	_ "github.com/go-sql-driver/mysql"
-
 	"github.com/boskuv/task-manager/internal/domain"
-	mysqlrepo "github.com/boskuv/task-manager/internal/repository/mysql"
 	"github.com/boskuv/task-manager/internal/repository"
+	mysqlrepo "github.com/boskuv/task-manager/internal/repository/mysql"
 	redisrepo "github.com/boskuv/task-manager/internal/repository/redis"
+	"github.com/boskuv/task-manager/internal/testutil/integration"
 )
 
+func TestMain(m *testing.M) {
+	code := m.Run()
+	integration.Shutdown()
+	os.Exit(code)
+}
+
 func TestListWritesToRedisIntegration(t *testing.T) {
-	client := goredis.NewClient(&goredis.Options{Addr: "localhost:6379"})
+	t.Parallel()
+
+	client := integration.Redis(t)
 	ctx := context.Background()
-	if err := client.Ping(ctx).Err(); err != nil {
-		t.Skipf("redis not available: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = client.FlushDB(ctx).Err()
-		_ = client.Close()
-	})
 
 	teams := newMockTeamRepo()
 	teams.members[memberKey{teamID: 1, userID: 1}] = domain.TeamMember{
@@ -75,37 +75,50 @@ func TestListWritesToRedisIntegration(t *testing.T) {
 }
 
 func TestListWritesToRedisWithMySQLIntegration(t *testing.T) {
-	db, err := sql.Open("mysql", "taskmanager:taskmanager@tcp(localhost:3306)/taskmanager?parseTime=true&charset=utf8mb4")
-	if err != nil {
-		t.Fatalf("open mysql: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	t.Parallel()
 
+	db := integration.MySQL(t)
 	ctx := context.Background()
-	if err := db.PingContext(ctx); err != nil {
-		t.Skipf("mysql not available: %v", err)
+
+	users := mysqlrepo.NewUserRepo(db)
+	teamsRepo := mysqlrepo.NewTeamRepo(db)
+	tasksRepo := mysqlrepo.NewTaskRepo(db)
+
+	owner, err := users.Create(ctx, domain.User{Email: "usecase-owner@example.com", PasswordHash: "hash"})
+	if err != nil {
+		t.Fatalf("create owner: %v", err)
+	}
+	team, err := teamsRepo.Create(ctx, domain.Team{Name: "Usecase Team", CreatedBy: owner.ID})
+	if err != nil {
+		t.Fatalf("create team: %v", err)
+	}
+	if err := teamsRepo.AddMember(ctx, domain.TeamMember{
+		TeamID: team.ID,
+		UserID: owner.ID,
+		Role:   domain.TeamRoleOwner,
+	}); err != nil {
+		t.Fatalf("add owner: %v", err)
+	}
+	if _, err := tasksRepo.Create(ctx, domain.Task{
+		TeamID:      team.ID,
+		Title:       "MySQL task",
+		Description: "",
+		Status:      domain.TaskStatusTodo,
+		CreatedBy:   owner.ID,
+	}); err != nil {
+		t.Fatalf("create task: %v", err)
 	}
 
-	client := goredis.NewClient(&goredis.Options{Addr: "localhost:6379"})
-	if err := client.Ping(ctx).Err(); err != nil {
-		t.Skipf("redis not available: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = client.FlushDB(ctx).Err()
-		_ = client.Close()
-	})
-
-	teams := mysqlrepo.NewTeamRepo(db)
-	tasks := mysqlrepo.NewTaskRepo(db)
+	client := integration.Redis(t)
 	cache := redisrepo.NewTaskCache(client)
-	svc := NewService(tasks, teams, mysqlrepo.NewTaskHistoryRepo(db), cache)
+	svc := NewService(tasksRepo, teamsRepo, mysqlrepo.NewTaskHistoryRepo(db), cache)
 
-	_, err = svc.List(ctx, 1, ListInput{TeamID: 1})
+	_, err = svc.List(ctx, owner.ID, ListInput{TeamID: team.ID})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
 
-	keys, err := client.Keys(ctx, "tasks:team:1:filter:*").Result()
+	keys, err := client.Keys(ctx, "tasks:team:"+strconv.FormatInt(team.ID, 10)+":filter:*").Result()
 	if err != nil {
 		t.Fatalf("Keys: %v", err)
 	}
