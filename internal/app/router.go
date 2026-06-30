@@ -25,6 +25,7 @@ type routerDeps struct {
 func newRouter(deps routerDeps) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", healthHandler)
+	registerOpenAPIRoutes(mux)
 
 	if deps.metrics != nil {
 		mux.Handle("GET /metrics", deps.metrics.Handler())

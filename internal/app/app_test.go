@@ -33,6 +33,35 @@ func TestHealthHandler(t *testing.T) {
 	}
 }
 
+func TestNewRouterRegistersOpenAPIRoutes(t *testing.T) {
+	t.Parallel()
+
+	mux := newRouter(routerDeps{metrics: middleware.NewHTTPMetrics()})
+
+	specReq := httptest.NewRequest(http.MethodGet, "/openapi.yaml", nil)
+	specRec := httptest.NewRecorder()
+	mux.ServeHTTP(specRec, specReq)
+	if specRec.Code != http.StatusOK {
+		t.Fatalf("openapi status = %d, want %d", specRec.Code, http.StatusOK)
+	}
+	if !strings.Contains(specRec.Header().Get("Content-Type"), "yaml") {
+		t.Fatalf("content-type = %q, want yaml", specRec.Header().Get("Content-Type"))
+	}
+	if !strings.Contains(specRec.Body.String(), "openapi: 3.0.3") {
+		t.Fatal("expected openapi spec body")
+	}
+
+	swaggerReq := httptest.NewRequest(http.MethodGet, "/swagger/", nil)
+	swaggerRec := httptest.NewRecorder()
+	mux.ServeHTTP(swaggerRec, swaggerReq)
+	if swaggerRec.Code != http.StatusOK {
+		t.Fatalf("swagger status = %d, want %d", swaggerRec.Code, http.StatusOK)
+	}
+	if !strings.Contains(swaggerRec.Body.String(), "swagger-ui") {
+		t.Fatal("expected swagger ui html")
+	}
+}
+
 func TestNewRouterRegistersHealthRoute(t *testing.T) {
 	t.Parallel()
 
