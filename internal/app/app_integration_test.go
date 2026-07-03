@@ -9,49 +9,48 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	goredis "github.com/redis/go-redis/v9"
+	"github.com/boskuv/task-manager/internal/testutil/integration"
 )
 
+func TestMain(m *testing.M) {
+	code := m.Run()
+	integration.Shutdown()
+	os.Exit(code)
+}
+
 func TestHTTPTaskListWritesRedisIntegration(t *testing.T) {
-	t.Chdir("../..")
+	db := integration.MySQL(t)
+	rdb := integration.Redis(t)
 
-	cfgPath := filepath.Join("configs", "config.yaml")
-	if _, err := os.Stat(cfgPath); err != nil {
-		t.Fatalf("stat config: %v", err)
+	cfg := &Config{
+		Server: ServerConfig{
+			Host:            "127.0.0.1",
+			Port:            8080,
+			ReadTimeout:     10 * time.Second,
+			WriteTimeout:    10 * time.Second,
+			ShutdownTimeout: 15 * time.Second,
+		},
+		JWT: JWTConfig{
+			Secret:    "integration-test-secret",
+			AccessTTL: time.Hour,
+		},
+		RateLimit: RateLimitConfig{RequestsPerMinute: 100},
+		Logging:   LoggingConfig{Level: "error", Format: "text"},
 	}
-	t.Setenv("CONFIG_PATH", cfgPath)
 
-	cfg, err := Load()
+	application, err := newApp(cfg, db, rdb, nil)
 	if err != nil {
-		t.Fatalf("Load: %v", err)
+		t.Fatalf("newApp: %v", err)
 	}
 
-	application, err := New(cfg, nil)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	t.Cleanup(func() {
-		application.close()
-	})
-
-	client := goredis.NewClient(&goredis.Options{Addr: cfg.Redis.Addr})
 	ctx := context.Background()
-	if err := client.Ping(ctx).Err(); err != nil {
-		t.Skipf("redis not available: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = client.FlushDB(ctx).Err()
-		_ = client.Close()
-	})
-
 	email := fmt.Sprintf("http-redis-%d@example.com", time.Now().UnixNano())
-	registerBody := fmt.Sprintf(`{"email":%q,"password":"secret123","name":"HTTP Redis"}`, email)
+	registerBody := fmt.Sprintf(`{"email":%q,"password":"secret123"}`, email)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/register", strings.NewReader(registerBody))
 	application.server.Handler.ServeHTTP(rec, req)
@@ -100,7 +99,7 @@ func TestHTTPTaskListWritesRedisIntegration(t *testing.T) {
 		t.Fatalf("list status = %d body = %s", listRec.Code, listRec.Body.String())
 	}
 
-	keys, err := client.Keys(ctx, "tasks:team:"+strconv.FormatInt(teamResp.ID, 10)+":filter:*").Result()
+	keys, err := rdb.Keys(ctx, "tasks:team:"+strconv.FormatInt(teamResp.ID, 10)+":filter:*").Result()
 	if err != nil {
 		t.Fatalf("Keys: %v", err)
 	}

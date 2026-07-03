@@ -65,6 +65,10 @@ func New(cfg *Config, logger *slog.Logger) (*App, error) {
 		return nil, err
 	}
 
+	return newApp(cfg, db, rdb, logger)
+}
+
+func newApp(cfg *Config, db *sql.DB, rdb *redis.Client, logger *slog.Logger) (*App, error) {
 	userRepo := mysqlrepo.NewUserRepo(db)
 	teamRepo := mysqlrepo.NewTeamRepo(db)
 	taskRepo := mysqlrepo.NewTaskRepo(db)
@@ -90,7 +94,7 @@ func New(cfg *Config, logger *slog.Logger) (*App, error) {
 		db:    db,
 		redis: rdb,
 		server: &http.Server{
-			Addr:         cfg.Addr(),
+			Addr:    cfg.Addr(),
 			Handler: newRouter(routerDeps{
 				auth:               authHandler,
 				teams:              teamHandler,
