@@ -52,6 +52,12 @@ services:
       DATABASE_DSN: "taskmanager:taskmanager@tcp(mysql:3306)/taskmanager?parseTime=true&charset=utf8mb4"
       REDIS_ADDR: "redis:6379"
       JWT_SECRET: "dev-secret-change-me"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
 volumes:
   mysql_data:

@@ -1,8 +1,11 @@
 package app
 
 import (
+	"database/sql"
 	"log/slog"
 	"net/http"
+
+	"github.com/redis/go-redis/v9"
 
 	"github.com/boskuv/task-manager/internal/handler"
 	"github.com/boskuv/task-manager/internal/handler/middleware"
@@ -20,11 +23,14 @@ type routerDeps struct {
 	rateLimitPerMinute int
 	metrics            *middleware.HTTPMetrics
 	logger             *slog.Logger
+	db                 *sql.DB
+	redis              *redis.Client
 }
 
 func newRouter(deps routerDeps) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", healthHandler)
+	mux.HandleFunc("GET /health", livenessHandler)
+	mux.HandleFunc("GET /health/ready", newReadinessHandler(deps.db, deps.redis))
 	registerOpenAPIRoutes(mux)
 
 	if deps.metrics != nil {

@@ -12,13 +12,13 @@ import (
 	"github.com/boskuv/task-manager/internal/pkg/logging"
 )
 
-func TestHealthHandler(t *testing.T) {
+func TestLivenessHandler(t *testing.T) {
 	t.Parallel()
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
 
-	healthHandler(rec, req)
+	livenessHandler(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -30,6 +30,26 @@ func TestHealthHandler(t *testing.T) {
 	}
 	if string(body) != "ok" {
 		t.Errorf("body = %q, want ok", body)
+	}
+}
+
+func TestReadinessHandlerWithoutDependencies(t *testing.T) {
+	t.Parallel()
+
+	mux := newRouter(routerDeps{metrics: middleware.NewHTTPMetrics()})
+	req := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+	}
+	if !strings.Contains(rec.Body.String(), `"status":"not_ready"`) {
+		t.Fatalf("body = %q, want not_ready", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"mysql":"unavailable"`) {
+		t.Fatalf("body = %q, want mysql unavailable", rec.Body.String())
 	}
 }
 

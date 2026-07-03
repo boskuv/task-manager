@@ -30,7 +30,8 @@ paths:
   /health:
     get:
       tags: [system]
-      summary: Проверка живости
+      summary: Liveness probe
+      description: Процесс жив. Не проверяет MySQL и Redis.
       operationId: health
       responses:
         "200":
@@ -40,6 +41,42 @@ paths:
               schema:
                 type: string
                 example: ok
+
+  /health/ready:
+    get:
+      tags: [system]
+      summary: Readiness probe
+      description: |
+        Готовность принимать трафик. Проверяет доступность MySQL и Redis.
+        Для Kubernetes/Docker healthcheck.
+      operationId: healthReady
+      responses:
+        "200":
+          description: Все зависимости доступны
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessResponse"
+              examples:
+                ready:
+                  value:
+                    status: ready
+                    checks:
+                      mysql: ok
+                      redis: ok
+        "503":
+          description: Одна или несколько зависимостей недоступны
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessResponse"
+              examples:
+                notReady:
+                  value:
+                    status: not_ready
+                    checks:
+                      mysql: error
+                      redis: ok
 
   /api/v1/register:
     post:
@@ -564,6 +601,23 @@ components:
             code: rate_limit_exceeded
 
   schemas:
+    ReadinessResponse:
+      type: object
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ready, not_ready]
+          example: ready
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [ok, error, unavailable]
+          example:
+            mysql: ok
+            redis: ok
+
     ErrorResponse:
       type: object
       required: [error]

@@ -96,6 +96,8 @@ func New(cfg *Config, logger *slog.Logger) (*App, error) {
 				rateLimitPerMinute: cfg.RateLimit.RequestsPerMinute,
 				metrics:            httpMetrics,
 				logger:             logger,
+				db:                 db,
+				redis:              rdb,
 			}),
 			ReadTimeout:  cfg.Server.ReadTimeout,
 			WriteTimeout: cfg.Server.WriteTimeout,
@@ -141,10 +143,4 @@ func (a *App) Run() error {
 func (a *App) close() {
 	closeRedis(a.redis)
 	closeMySQL(a.db)
-}
-
-func healthHandler(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte("ok"))
 }
