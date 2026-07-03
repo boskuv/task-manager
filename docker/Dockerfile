@@ -26,6 +26,7 @@ WORKDIR /app
 
 COPY --from=builder /out/task-manager /app/task-manager
 COPY configs/config.example.yaml /app/configs/config.yaml
+COPY migrations /app/migrations
 
 USER appuser
 

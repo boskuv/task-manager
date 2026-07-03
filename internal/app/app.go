@@ -54,6 +54,11 @@ func New(cfg *Config, logger *slog.Logger) (*App, error) {
 		return nil, err
 	}
 
+	if err := applyMigrations(db, cfg.Database); err != nil {
+		closeMySQL(db)
+		return nil, err
+	}
+
 	rdb, err := openRedis(cfg.Redis)
 	if err != nil {
 		closeMySQL(db)

@@ -35,6 +35,8 @@ type DatabaseConfig struct {
 	MaxOpenConns    int           `yaml:"max_open_conns" env:"DATABASE_MAX_OPEN_CONNS" env-default:"25"`
 	MaxIdleConns    int           `yaml:"max_idle_conns" env:"DATABASE_MAX_IDLE_CONNS" env-default:"5"`
 	ConnMaxLifetime time.Duration `yaml:"conn_max_lifetime" env:"DATABASE_CONN_MAX_LIFETIME" env-default:"5m"`
+	AutoMigrate     bool          `yaml:"auto_migrate" env:"DATABASE_AUTO_MIGRATE" env-default:"true"`
+	MigrationsDir   string        `yaml:"migrations_dir" env:"DATABASE_MIGRATIONS_DIR" env-default:"migrations"`
 }
 
 type RedisConfig struct {
